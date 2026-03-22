@@ -1,0 +1,5 @@
+uploads/
+prompts/
+.env
+tmux_agents.json
+.oysterun

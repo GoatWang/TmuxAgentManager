@@ -1,0 +1,26 @@
+{
+  "description": "Current worker agent configuration. All commands (send_tmux, chk_agent_status, delegate, loop_monitor_agent, restart_session) default to the worker session defined here.",
+  "worker": {
+    "name": "<worker_name>",
+    "project": "<project_name>",
+    "project_dir": "<absolute_path_to_project>",
+    "session": "<tmux_session_name>",
+    "send_method": "two-line",
+    "notes": "<description of the worker setup>"
+  },
+  "send_methods": {
+    "two-line": {
+      "description": "For worker sessions: send text first, then C-m separately. Enter does not submit.",
+      "example": [
+        "tmux send-keys -t <session> \"<message>\"",
+        "tmux send-keys -t <session> C-m"
+      ]
+    },
+    "enter": {
+      "description": "For regular sessions: append Enter to send-keys.",
+      "example": [
+        "tmux send-keys -t <session> \"<message>\" Enter"
+      ]
+    }
+  }
+}
