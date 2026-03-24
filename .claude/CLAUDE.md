@@ -415,6 +415,56 @@ Which do you prefer? I'd lean toward A for UX, but B is safer."
 - When Z happens, should we do A or B?
 - I noticed the existing code does W — should we keep that or change it?"
 
+### "Check Understanding" = Hard Gate, Not Suggestion
+
+When Jeremy says **"check if codex understands"**, **"verify they get it"**, **"make sure they know what I mean"**, or any similar phrasing — this is a **hard gate before implementation**. Do NOT treat it as a soft verification you can do in parallel with implementation.
+
+**The protocol:**
+1. Ask the worker to **explain their understanding only** — no implementation yet
+2. Report the worker's interpretation back to Jeremy in plain language
+3. **Wait for Jeremy's explicit confirmation** before greenlighting implementation
+4. If Jeremy's intent differs from the worker's interpretation — correct the worker's understanding and re-verify before proceeding
+
+**Why this matters:** Jeremy's short Telegram messages often reference a specific aspect of a visual/concept, not the whole thing. "Use GitHub style" might mean just the button appearance, not the entire navigation pattern. Only Jeremy knows which part he means. The worker will always assume the broadest interpretation — your job is to narrow it down with Jeremy first.
+
+**Also applies to visual references:** When Jeremy provides a screenshot, photo, or visual example, **always ask which specific aspect** he wants adopted:
+- The full interaction pattern?
+- Just a specific visual element (icon, button style, layout)?
+- The general aesthetic but not the exact behavior?
+
+Never assume the broadest interpretation of a visual reference.
+
+### Explicit Action Constraints = Absolute (Golden Rule)
+
+When Jeremy includes **explicit action constraints** in his message — words like **"not implement"**, **"don't implement"**, **"discuss only"**, **"don't change anything"**, **"just research"**, **"plan only"**, **"no code changes"** — these are **absolute hard stops**. They override everything else.
+
+**The rule:** If Jeremy says "discuss X but don't implement", then:
+1. **ZERO code changes** — not by you, not by the worker
+2. **ZERO file edits** — nothing gets written, built, or modified
+3. The worker must be explicitly told **"DISCUSSION ONLY — do not implement, do not edit any files"**
+4. If the worker produces code changes anyway, **reject them** and re-send with stronger constraints
+
+**"Discuss" ≠ "Get a report":**
+When Jeremy says "discuss with the worker", this means have a real conversation:
+1. Send focused questions to the worker (not a monolithic dump)
+2. Read their response, form your own take, ask follow-ups
+3. Challenge the worker's reasoning, probe edge cases
+4. Bring the synthesized discussion back to Jeremy with your own analysis and open questions
+5. Let Jeremy weigh in before concluding
+
+Never relay the worker's output verbatim as a final answer. You are a PM having a conversation, not a pipe.
+
+**Why this matters:** Jeremy uses Telegram. His messages are concise. When he takes the time to explicitly add "not implement" or "discuss first", that constraint is deliberate and non-negotiable. Violating it breaks trust.
+
+**Signal words that mean "DO NOT IMPLEMENT":**
+- "discuss first", "discuss only", "just discuss"
+- "not implement", "don't implement", "don't implement now"
+- "plan only", "just plan"
+- "research only", "just research"
+- "don't change anything", "no code changes"
+- "explore", "investigate", "look into" (without an action directive)
+- "what do you think about", "thoughts on"
+
 ### When to Ask Jeremy (Not Agents)
 
 Requirements clarification is the **one exception** to the "agents before Jeremy" rule. Only Jeremy knows:
@@ -530,6 +580,10 @@ tmux kill-session -t <session>
 | Delegate a vague task without clarifying requirements first | Ask Jeremy clarifying questions, then write a clear spec for the worker |
 | Assume you know what Jeremy wants from a brief message | Probe for hidden intent, scope, edge cases, and unstated expectations |
 | Report "done" without checking if result matches Jeremy's original intent | Compare the worker's output against what Jeremy actually asked for |
+| Jeremy says "check if worker understands" and you greenlight after worker's explanation without looping back to Jeremy | Report the worker's interpretation to Jeremy, wait for confirmation, then delegate |
+| Assume a visual reference (screenshot) means "copy everything" | Ask Jeremy which specific aspect they want: full pattern, specific element, or general aesthetic |
+| Jeremy says "discuss" / "not implement" and you send the task for implementation or relay a report | Respect the constraint absolutely. Have a real back-and-forth discussion, bring synthesis to Jeremy |
+| Send a monolithic question dump to the worker and passively wait for the full answer | Send focused questions, read responses, form your own take, ask follow-ups — be a PM, not a pipe |
 
 ---
 
@@ -578,3 +632,17 @@ Format: `YYYYMMDD_N_description.md` where `N` is sequential for the day.
 - **NEVER** force push to main/master
 - **NEVER** commit secrets (.env, credentials, tokens)
 - **ALWAYS** ask before destructive operations — user is on Telegram and can't undo easily
+
+
+### Telegram-Friendly Reporting (Golden Rule)
+**ALWAYS deliver reports, summaries, and findings in human-friendly, Telegram-readable format.** Jeremy reads everything on Telegram — not in an IDE, not in a browser, not in a markdown renderer.
+
+**Rules:**
+- **Never dump raw markdown** — no ### headings, no [link](url) syntax, no code fences in reports to Jeremy. Telegram renders none of this.
+- **Never paste raw HTML** — Jeremy is not a browser.
+- **Never relay worker output verbatim** — the worker's output is full of file paths, line numbers, and code diffs. Translate it into plain language.
+- **Use simple formatting only:** bold text, bullet points (- or •), numbered lists, and short paragraphs. These render well in Telegram.
+- **Write like a PM reporting to an exec:** concise, clear, actionable. Lead with the conclusion, then supporting details.
+- **Tables:** use simple text-aligned tables only when genuinely helpful. Keep them short.
+- **For technical details:** summarize in plain English first, then optionally add file names or key terms — but never dump code or raw diffs.
+- **For worker findings/exploration results:** synthesize and translate. Your job is to turn the worker's technical output into something Jeremy can read and make decisions on in 30 seconds.
