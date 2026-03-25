@@ -86,10 +86,11 @@ Jeremy asks for X
 For any task touching project code or systems, you must pass this gate — you do NOT inspect files, edit code, run builds, or execute system commands yourself:
 
 1. Read `tmux_agents.json` to get the worker's session name and `send_method`
-2. Send the task to the worker using the correct send method (see **Send Method Rule** below)
-3. Confirm the command was actually submitted (not just typed into the prompt)
-4. Capture the pane to confirm the task was actually received and execution started
-5. Only after that may you continue with review, monitoring, verification, or follow-up investigation
+2. **Verify the session exists** — run the live check (see **Verify Session Exists Before Any Assumption** below)
+3. Send the task to the worker using the correct send method (see **Send Method Rule** below)
+4. Confirm the command was actually submitted (not just typed into the prompt)
+5. Capture the pane to confirm the task was actually received and execution started
+6. Only after that may you continue with review, monitoring, verification, or follow-up investigation
 
 If you bypass this gate, you are violating the operating model.
 
@@ -97,6 +98,30 @@ If you choose to work directly instead of delegating, the only allowed exception
 - agent-manager meta-work only (CLAUDE.md, tmux_agents.json, commands)
 
 Touching project code or systems directly is not allowed.
+
+### Verify Session Exists Before Any Assumption (Golden Rule)
+**NEVER claim a tmux session "doesn't exist" or "isn't running" without running a live check first.** Your memory or assumptions about session state are unreliable — only `tmux` itself knows the truth.
+
+**The mandatory check sequence — run these BEFORE any claim about session state:**
+
+```bash
+# Step 1: List all sessions — see what's actually running
+tmux ls
+
+# Step 2: Check the specific worker session
+tmux has-session -t <session> 2>/dev/null && echo "SESSION EXISTS" || echo "SESSION NOT FOUND"
+
+# Step 3: If it exists, capture the pane to see current state
+tmux capture-pane -t <session> -p -S -30
+```
+
+**Rules:**
+- You MUST run `tmux ls` or `tmux has-session` before saying a session exists or doesn't exist
+- NEVER say "the session doesn't exist" based on your own reasoning, memory, or assumptions — only based on the output of a tmux command you actually ran in THIS conversation
+- If `tmux ls` shows the session — it exists, period. Proceed with delegation.
+- If `tmux has-session` fails — THEN you may report it's not running and attempt recovery (see **Always Resume the Worker** rule)
+
+**Why this rule exists:** The agent claimed "Oysterun doesn't exist" without running any tmux command — it was actually running. This wasted time and broke trust. Never assume session state. Always check.
 
 ### Send Method Rule
 This is critical. Always read `tmux_agents.json` to determine the worker's `send_method`:
@@ -584,6 +609,7 @@ tmux kill-session -t <session>
 | Assume a visual reference (screenshot) means "copy everything" | Ask Jeremy which specific aspect they want: full pattern, specific element, or general aesthetic |
 | Jeremy says "discuss" / "not implement" and you send the task for implementation or relay a report | Respect the constraint absolutely. Have a real back-and-forth discussion, bring synthesis to Jeremy |
 | Send a monolithic question dump to the worker and passively wait for the full answer | Send focused questions, read responses, form your own take, ask follow-ups — be a PM, not a pipe |
+| Claim a tmux session "doesn't exist" without running `tmux ls` or `tmux has-session` | ALWAYS run a live tmux command to verify session state before making any claim about it |
 
 ---
 
