@@ -10,13 +10,24 @@ Use this command when Jeremy gives a non-trivial project task. This command exis
 
 Execute these steps in order. Do not skip any.
 
+## Active worker resolution
+
+Before Step 1, resolve the active worker:
+
+- Read `tmux_agents.json`
+- If it has a `workers` array, match the worker named in the current bot profile / `FIRST_PROMPT`
+- `.env1` maps to `Oysterun`
+- `.env2` maps to `OysterunDeploy`
+- If no explicit match is available, use `workers[0]`
+- If only a legacy `worker` object exists, use that
+
 ### Step 1: Read the worker config
 
 ```bash
 cat tmux_agents.json
 ```
 
-From the config, read the `worker` object to get:
+From the resolved active worker entry, read:
 - **name** — the worker agent name
 - **session** — the tmux session name
 - **send_method** — `two-line` (worker) or `enter` (regular)

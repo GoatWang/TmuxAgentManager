@@ -15,6 +15,17 @@ Examples:
 - `/spawn_tmux_session feature-auth` — spawn as `feature-auth`, resume latest
 - `/spawn_tmux_session bugfix-api 019d05d4-2f66-7bf0-97fe-67c516ccb27a` — spawn and resume specific session
 
+## Active worker resolution
+
+Before Step 1:
+
+- Read `tmux_agents.json`
+- If it has a `workers` array, match the worker named in the current bot profile / `FIRST_PROMPT`
+- `.env1` maps to `Oysterun`
+- `.env2` maps to `OysterunDeploy`
+- If no explicit match is available, use `workers[0]`
+- If only a legacy `worker` object exists, use that
+
 ## Procedure
 
 ### Step 1: Read the worker config
@@ -23,7 +34,7 @@ Examples:
 cat tmux_agents.json
 ```
 
-From the config, read the `worker` object to get:
+From the resolved active worker entry, read:
 - **project_dir** — the directory where the worker should run
 - **session** — the existing worker session name (to avoid naming conflicts)
 

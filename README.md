@@ -67,9 +67,20 @@ Worker Agent (tmux session)
    cp tmux_agents.json.template tmux_agents.json
    ```
 
-2. Configure `.env` with any required environment variables.
+2. Configure one or more bot profiles:
+   - `.env1` => defaults to the `Oysterun` worker
+   - `.env2` => defaults to the `OysterunDeploy` worker
 
-3. Start the Telegram bot session (see `.claude/commands/restart_ctb.md`).
+   Each env profile should set `FIRST_PROMPT` to name its default worker.
+
+3. Start the Telegram bot session with an explicit env profile:
+   ```bash
+   ctb --chrome --env=.env1
+   # or
+   ctb --chrome --env=.env2
+   ```
+
+   Or use the restart commands in `.claude/commands/restart_ctb.md`.
 
 ## Structure
 
@@ -88,6 +99,15 @@ Worker Agent (tmux session)
 tool_scripts/                # Utility scripts
 tmux_agents.json.template    # Worker config template
 ```
+
+## Worker Selection
+
+`tmux_agents.json` now supports multiple workers through the `workers` array.
+
+- The active/default worker is chosen by the current env profile's `FIRST_PROMPT`
+- `.env1` should target `Oysterun`
+- `.env2` should target `OysterunDeploy`
+- If no explicit worker hint is available, the manager should fall back to `workers[0]`
 
 ## Roles & Responsibilities
 

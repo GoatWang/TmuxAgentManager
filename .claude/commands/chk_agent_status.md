@@ -24,7 +24,18 @@ Use this skill when Jeremy asks for:
 
 - optional reminder of the last delegated task
 
-The target session is always the **worker** from `tmux_agents.json`. Do not ask for a session name.
+The target session is always the **active worker** resolved from `tmux_agents.json`. Do not ask for a session name.
+
+## Active worker resolution
+
+Before using the steps below:
+
+- Read `tmux_agents.json`
+- If it has a `workers` array, resolve the active worker from the current bot profile / `FIRST_PROMPT`
+- `.env1` maps to `Oysterun`
+- `.env2` maps to `OysterunDeploy`
+- If no explicit match is available, use `workers[0]`
+- If only a legacy `worker` object exists, use that
 
 ## Core rule
 
@@ -48,7 +59,7 @@ Good answer:
 cat tmux_agents.json
 ```
 
-From the config, read the `worker` object to get:
+From the resolved active worker entry, read:
 - **session** — the tmux session name
 - **send_method** — `two-line` (worker) or `enter` (regular)
 

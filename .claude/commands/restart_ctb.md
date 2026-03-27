@@ -4,7 +4,7 @@ Restart the `TmuxAgentManager` tmux session that runs this Telegram bot, resumin
 
 ## Input
 
-No arguments needed.
+`$ARGUMENTS` — Optional env file to restart with (for example `.env1` or `.env2`).
 
 ## Procedure
 
@@ -18,6 +18,12 @@ Wait for confirmation before continuing.
 
 ### Step 2: Kill and recreate
 
+Determine the env profile to use:
+
+- If `$ARGUMENTS` is provided, use that env file
+- Otherwise inspect the current pane / launch command for an existing `--env=...`
+- If nothing explicit is found, default to `.env1`
+
 **Note:** The session may be named `TmuxAgentManager` or `CodingTelegram`. Check both.
 
 1. **Kill the existing session:**
@@ -27,7 +33,7 @@ Wait for confirmation before continuing.
 
 2. **Recreate it with --resume:**
    ```bash
-   tmux new-session -d -s TmuxAgentManager -c "$(pwd)" 'ctb --chrome --resume; exec $SHELL'
+   tmux new-session -d -s TmuxAgentManager -c "$(pwd)" 'ctb --chrome --resume --env=<env_file>; exec $SHELL'
    ```
 
 3. **Verify it started:**
@@ -59,3 +65,4 @@ Wait for confirmation before continuing.
 - **After restarting, verify the session exists** — a silent failure is worse than a reported failure
 - **If it fails to start**, report the error clearly and suggest checking the project directory or `ctb` command
 - **Fallback name:** If `TmuxAgentManager` does not exist, try `CodingTelegram`
+- Prefer restarting with the same env profile the session was already using unless Jeremy explicitly asks to switch

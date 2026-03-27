@@ -1,6 +1,6 @@
 # /send_tmux — Send a command to the worker agent
 
-Send a message or task to the current worker agent session. Reads `tmux_agents.json` to determine the worker session and send method.
+Send a message or task to the current active worker agent session. Reads `tmux_agents.json` to determine the worker session and send method.
 
 ## Input
 
@@ -10,6 +10,17 @@ Examples:
 - `/send_tmux Fix the CSS overflow bug on mobile`
 - `/send_tmux What cron jobs are running?`
 
+## Active worker resolution
+
+Before Step 1:
+
+- Read `tmux_agents.json`
+- If it has a `workers` array, match the worker named in the current bot profile / `FIRST_PROMPT`
+- `.env1` maps to `Oysterun`
+- `.env2` maps to `OysterunDeploy`
+- If no explicit match is available, use `workers[0]`
+- If only a legacy `worker` object exists, use that
+
 ## Procedure
 
 ### Step 1: Read the worker config
@@ -18,7 +29,7 @@ Examples:
 cat tmux_agents.json
 ```
 
-From the config, read the `worker` object to get:
+From the resolved active worker entry, read:
 - **session** — the tmux session name
 - **send_method** — `two-line` (worker) or `enter` (regular)
 

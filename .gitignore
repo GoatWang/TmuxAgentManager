@@ -1,5 +1,8 @@
 uploads/
 prompts/
 .env
+.env1
+.env2
 tmux_agents.json
 .oysterun
+worker_cheatsheets/

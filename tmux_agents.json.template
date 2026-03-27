@@ -1,12 +1,30 @@
 {
-  "description": "Current worker agent configuration. All commands (send_tmux, chk_agent_status, delegate, loop_monitor_agent, restart_session) default to the worker session defined here.",
+  "description": "Worker agent configuration. Manager profiles choose the active/default worker via FIRST_PROMPT. If no explicit profile hint is available, use workers[0]. The legacy worker field mirrors workers[0] for backward compatibility.",
+  "workers": [
+    {
+      "name": "<worker_name_1>",
+      "project": "<project_name>",
+      "project_dir": "<absolute_path_to_project>",
+      "session": "<tmux_session_name_1>",
+      "send_method": "two-line",
+      "notes": "<description of worker 1>"
+    },
+    {
+      "name": "<worker_name_2>",
+      "project": "<project_name>",
+      "project_dir": "<absolute_path_to_project>",
+      "session": "<tmux_session_name_2>",
+      "send_method": "two-line",
+      "notes": "<description of worker 2>"
+    }
+  ],
   "worker": {
-    "name": "<worker_name>",
+    "name": "<worker_name_1>",
     "project": "<project_name>",
     "project_dir": "<absolute_path_to_project>",
-    "session": "<tmux_session_name>",
+    "session": "<tmux_session_name_1>",
     "send_method": "two-line",
-    "notes": "<description of the worker setup>"
+    "notes": "Legacy alias for workers[0]."
   },
   "send_methods": {
     "two-line": {
