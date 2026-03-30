@@ -19,6 +19,7 @@ Otherwise, use the active worker from the current bot profile / `FIRST_PROMPT`:
 - `.env2` maps to `OysterunDeploy`
 - If no explicit match is available, use `workers[0]`
 - If only a legacy `worker` object exists, use that
+- Do not switch away from the active worker unless Jeremy explicitly asked to scan a different worker
 
 ### Step 1: Read the worker config
 
@@ -41,7 +42,9 @@ Look for indicators:
 - **Claude Code** — prompt shows `claude>`, or started with `claude`
 - **Other** — shell prompt, cursor, or unknown agent
 
-Record the agent type — this affects how commands are invoked (e.g. Codex uses `/command`, Claude Code uses `/command`, shell agents need full script paths).
+Record the agent type — this affects how commands are invoked:
+- **Claude Code** — supports `/command` slash syntax directly
+- **Codex / Other agents** — do NOT support `.claude/commands/` slash commands. The PM must read the command file and send the instructions as plain text, or use the phrasing: `"Please now apply the flow in: .claude/commands/<command_name>.md"`
 
 ### Step 3: Read the worker's instructions
 
@@ -62,6 +65,7 @@ Record:
 - Key rules and constraints the worker follows
 - Coding standards, naming conventions
 - Any workflow instructions (branching, testing, PR conventions)
+- Which workflow steps the manager must enforce when delegating to this worker
 - Any restrictions or safety rules
 
 ### Step 4: Read the worker's available commands
@@ -128,6 +132,12 @@ Last updated: <date>
 
 <Summarize the expected workflow: branching strategy, testing requirements, PR conventions, etc.>
 
+## Manager Process Contract
+
+- The manager must follow this worker's development workflow for any relevant task.
+- If the workflow requires plans, worktrees, approval pauses, tests, verification, reports, merges, naming rules, or coordination, those steps are mandatory in delegation and sign-off.
+- Only Jeremy may explicitly approve deviating from this workflow.
+
 ## Available Commands
 
 | Command | Full Path | Purpose |
@@ -148,6 +158,9 @@ Last updated: <date>
 ## Delegation Quick Reference
 
 <Key things to remember when delegating to this worker — constraints, gotchas, preferred patterns>
+- Follow the development workflow above as mandatory manager process; do not ask the worker to skip required steps unless Jeremy explicitly approves that deviation
+- Respect the worker's original settings from `tmux_agents.json` / `FIRST_PROMPT`
+- Discuss project questions with the worker before asking Jeremy
 ```
 
 ### Step 7: Update CLAUDE.md to point to the cheat sheet
@@ -181,3 +194,6 @@ Key findings:
 - **Use full paths** when recording commands — non-Claude workers need explicit paths to follow commands.
 - **Update, don't duplicate** — if a cheat sheet already exists for this worker, update it rather than creating a new one.
 - **Always read `tmux_agents.json`** first — never hardcode session names or paths.
+- Treat the generated cheat sheet as the manager-facing workflow contract for that worker, not just a reference note.
+- Preserve the current worker's original settings unless Jeremy explicitly asks for worker-config meta-work.
+- If a follow-up question remains after the scan, ask the worker first before asking Jeremy.

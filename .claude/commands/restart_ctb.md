@@ -23,6 +23,7 @@ Determine the env profile to use:
 - If `$ARGUMENTS` is provided, use that env file
 - Otherwise inspect the current pane / launch command for an existing `--env=...`
 - If nothing explicit is found, default to `.env1`
+- Preserve the current env profile by default so the original worker selection/settings stay intact. Do not switch envs unless Jeremy explicitly asks.
 
 **Note:** The session may be named `TmuxAgentManager` or `CodingTelegram`. Check both.
 
@@ -65,4 +66,4 @@ Determine the env profile to use:
 - **After restarting, verify the session exists** — a silent failure is worse than a reported failure
 - **If it fails to start**, report the error clearly and suggest checking the project directory or `ctb` command
 - **Fallback name:** If `TmuxAgentManager` does not exist, try `CodingTelegram`
-- Prefer restarting with the same env profile the session was already using unless Jeremy explicitly asks to switch
+- Prefer restarting with the same env profile the session was already using so the original worker selection/settings stay intact unless Jeremy explicitly asks to switch

@@ -91,11 +91,11 @@ Worker Agent (tmux session)
     delegate.md              # Force delegation before code work
     send_tmux.md             # Send a command to the worker
     chk_agent_status.md      # Check worker progress
-    loop_monitor_agent.md    # Recurring worker monitor
+    loop_monitor_agent.md    # Manual sleep-and-wait worker monitor
     spawn_tmux_session.md    # Spawn a new worker session
     restart_ctb.md           # Restart Telegram bot (with resume)
     restart_ctb_woresume.md  # Restart Telegram bot (fresh)
-    stop_monitor.md          # Stop the monitoring loop
+    stop_monitor.md          # Stop legacy monitor loops
 tool_scripts/                # Utility scripts
 tmux_agents.json.template    # Worker config template
 ```

@@ -25,6 +25,7 @@ Use this skill when Jeremy asks for:
 - optional reminder of the last delegated task
 
 The target session is always the **active worker** resolved from `tmux_agents.json`. Do not ask for a session name.
+Do not switch to another worker or another session during this command.
 
 ## Active worker resolution
 
@@ -36,6 +37,7 @@ Before using the steps below:
 - `.env2` maps to `OysterunDeploy`
 - If no explicit match is available, use `workers[0]`
 - If only a legacy `worker` object exists, use that
+- Respect the resolved worker's original `session`, `send_method`, and `project_dir`. If that worker is unhealthy, report or recover it instead of switching workers.
 
 ## Core rule
 
@@ -187,6 +189,7 @@ tmux send-keys -t <session> "What exactly is blocking the last assigned task? Sh
 ## Important reminders
 
 - **Always read `tmux_agents.json`** to get the worker session and send method — never hardcode
+- Use the resolved active worker exactly as configured; do not substitute another worker to get a status
 - Do not confuse "running process" with "task progress"
 - Do not report "working" unless the pane shows actual task progress
 - Do not report "finished" unless the pane shows an outcome, summary, or return to shell after task completion

@@ -20,6 +20,7 @@ Before Step 1:
 - `.env2` maps to `OysterunDeploy`
 - If no explicit match is available, use `workers[0]`
 - If only a legacy `worker` object exists, use that
+- Respect that resolved worker exactly as configured. Do not switch workers or rewrite worker settings unless Jeremy explicitly asks for agent-manager meta-work.
 
 ## Procedure
 
@@ -40,6 +41,7 @@ tmux has-session -t <session> 2>/dev/null && echo "exists" || echo "not found"
 ```
 
 If the session does not exist, report it and stop.
+Do not silently send the message to a different worker session.
 
 ### Step 3: Clear stale input first
 
@@ -100,6 +102,7 @@ Report in this format:
 ## Important rules
 
 - **Always read `tmux_agents.json`** to get the worker session and send method — never hardcode
+- Preserve the original worker settings from `FIRST_PROMPT` / `tmux_agents.json`; if the target session is broken, recover or report it instead of switching workers
 - **Always use the correct send method** from the config — worker may require two-line, regular requires Enter
 - **Always confirm receipt** — text in the prompt without execution is NOT a sent command
 - **Never skip the session existence check** — sending to a dead session is silent failure

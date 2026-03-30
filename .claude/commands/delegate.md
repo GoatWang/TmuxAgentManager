@@ -20,6 +20,7 @@ Before Step 1, resolve the active worker:
 - `.env2` maps to `OysterunDeploy`
 - If no explicit match is available, use `workers[0]`
 - If only a legacy `worker` object exists, use that
+- Respect that resolved worker exactly as configured. Do not switch workers or rewrite worker settings unless Jeremy explicitly asks for agent-manager meta-work.
 
 ### Step 1: Read the worker config
 
@@ -84,6 +85,7 @@ Your next actions should be limited to:
 
 - monitoring progress
 - asking follow-up questions
+- asking the worker follow-up questions before asking Jeremy for more input
 - reviewing diffs
 - verifying results in Chrome, tests, curl, or logs
 
@@ -119,6 +121,7 @@ Report back in this shape:
 ## Rules
 
 - **Always read `tmux_agents.json`** to get the worker config — never hardcode session names
+- Respect the original worker settings from `tmux_agents.json` / `FIRST_PROMPT`; if that worker has a problem, recover or report it instead of switching workers
 - Never start project-code implementation before Step 4 is complete
 - Never assume the agent received the task without checking the pane
 - Never omit the repo/worktree path from a risky task

@@ -25,6 +25,7 @@ Before Step 1:
 - `.env2` maps to `OysterunDeploy`
 - If no explicit match is available, use `workers[0]`
 - If only a legacy `worker` object exists, use that
+- Use that resolved worker as the source of truth. Do not replace or rewrite the original worker's settings.
 
 ## Procedure
 
@@ -123,6 +124,7 @@ Kill when done:
 ## Important rules
 
 - **Always read `tmux_agents.json`** for the worker's `project_dir` — never hardcode paths
+- This command is additive only. Do not repoint `FIRST_PROMPT`, overwrite the original worker session, or rewrite worker settings.
 - **Never reuse the existing worker session name** — this spawns a NEW session alongside the worker
 - **Always try resume first** — fresh start is only a fallback if resume fails
 - **Use `--dangerously-bypass-approvals-and-sandbox`** for automation compatibility
