@@ -3,6 +3,7 @@ prompts/
 .env
 .env1
 .env2
+.env3
 tmux_agents.json
 .oysterun
 worker_cheatsheets/
