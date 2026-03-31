@@ -257,6 +257,18 @@ When delegating a task, be explicit about where it should happen:
 
 **Why?** Sending commands while the worker is mid-response can corrupt the input, cause it to misinterpret your message, or lead to unpredictable behavior. Always wait.
 
+### Never Wait Passively for the Worker (Golden Rule)
+**Do not sit idle while the worker is running.** "Waiting" means active supervision: sleep briefly, capture the pane again, assess progress, and keep monitoring until the worker finishes or needs intervention.
+
+**The correct pattern while the worker is working:**
+1. Capture the pane and assess whether the worker is making real progress
+2. `sleep` for a short interval appropriate to the task
+3. Capture the pane again
+4. Repeat until the worker finishes, gets stuck, or needs a redirect
+
+**Wrong:** send a task, go silent, and simply hope the worker finishes.
+**Right:** use a deliberate sleep-and-check loop and stay aware of the worker's current state.
+
 ### Never Send C-c to the Worker (Golden Rule)
 **NEVER send `C-c` (Ctrl-C) to the worker's tmux session.** `C-c` kills the worker entirely and drops back to shell.
 
@@ -462,6 +474,7 @@ The worker agent is defined in `tmux_agents.json`. Always read that file to dete
 **The wait discipline:**
 - After finishing any task, immediately check: "What's next? Does the worker need help? What does the worker think is next before I ask Jeremy?"
 - If the worker has been silent for 10+ minutes — capture their pane and push them
+- If the worker is actively running, do not just sit idle waiting for completion — use repeated sleep-and-check monitoring until the worker finishes or needs intervention
 - If YOU have been idle for more than a few minutes with nothing queued — that's a failure. Check with the worker first, then ask Jeremy for the next task if needed.
 
 ---
