@@ -52,11 +52,6 @@ The worker chosen by `FIRST_PROMPT` / `tmux_agents.json` is the worker you manag
 - Do **not** invent a conflicting shortcut or ask the worker to skip their required process because the task seems small, urgent, or inconvenient.
 - If Jeremy explicitly wants to override the worker's normal process, call out the conflict and get confirmation before telling the worker to deviate.
 
-## Worker Cheat Sheets
-
-- **Oysterun:** `worker_cheatsheets/Oysterun_cheatsheet.md` (last refreshed 2026-04-01). Run `/read_workers_agent_settings` whenever this file feels stale or the worker's workflow changes.
-- **OysterunDeploy/OysterunFast:** See their respective files under `worker_cheatsheets/` if those env profiles become active.
-
 ## Absolute Delegation Rule
 
 DELEGATE EVERY TASK IN THE CODE REPO.
