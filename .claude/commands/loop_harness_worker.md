@@ -70,6 +70,18 @@ If this tick targets W1/W2/W3 rather than only the active/default worker, apply 
 
 Use the `team_lead` role binding first and resolve live Oysterun sessions by `session_name`. If the binding is ambiguous or unresolved, list sessions only to diagnose the routing problem, then stop and report a session-binding blocker; do not ask the owner for a task-routing decision. Resolve `TL_WORKINGDIR` from `config.json` at `team.roles.team_lead.working_dir` before composing TL guide references. Do not call `oysterun_control.py` freehand unless you are following that skill and its command docs.
 
+### Required Local Docs To Follow
+
+Before sending or reading anything, PM must locate and follow these exact docs:
+
+- Worker send protocol: `~/Projects/TmuxAgentManager/.claude/commands/send_tmux.md`
+- Oysterun session-control skill: `~/Projects/TmuxAgentManager/.claude/skills/oysterun_session_control.md`
+- TL read protocol: `~/Projects/TmuxAgentManager/.claude/commands/skills/Oysterun/read_response.md`
+- TL send protocol: `~/Projects/TmuxAgentManager/.claude/commands/skills/Oysterun/send_cmd.md`
+- TL session listing / binding diagnosis: `~/Projects/TmuxAgentManager/.claude/commands/skills/Oysterun/list_session.md`
+
+Use the skill doc first for routing rules, then the specific Oysterun command doc for the concrete action (`read_response`, `send_cmd`, or `list_session`). Do not skip directly to helper scripts when these docs exist.
+
 ## Required reads per tick (manager side)
 
 Each tick re-reads these (no cross-tick state). Keep the reads small; this is a 5-minute cadence, not unlimited budget:
@@ -98,40 +110,101 @@ If TL dispatch names a different current proposal root, use TL's path and mentio
 
 ## Procedure (one tick)
 
-### Step 0: Confirm the worker state
+Every tick MUST perform the same four phases in this exact order:
 
-Cheap-first pane state:
+1. **Read TL response** — use the Oysterun `read_response` command for TL first.
+2. **Check all configured workers** — inspect W1, W2, and W3 progress before deciding what to send.
+3. **Send updates/questions to TL** — use the Oysterun `send_cmd` command for TL with the consolidated worker state, deliverables, blockers, and questions.
+4. **Send commands to workers** — use `/send_tmux` for worker tmux sessions with TL-routed assignments, evidence questions, or blocker follow-ups.
+
+Do these phases even if one target has no new action. A phase with no action should record `no-op` and why.
+
+If the tick has enough context to send a useful TL update or worker instruction, send it in the same loop run. Do not defer just because the tick already performed another phase. If required information is not ready, collect and summarize the information available, record what is missing, and carry that packet into the next round instead of guessing.
+
+### Step 0: Read TL response first
+
+Before checking workers, read TL's latest response through `~/Projects/TmuxAgentManager/.claude/skills/oysterun_session_control.md` and the Oysterun `read_response` command.
+
+Capture:
+
+- new TL directives
+- worker-specific assignments
+- TL questions for workers
+- TL requests for evidence or owner input
+- TL "stand by" or "stop routing" instructions
+
+If TL cannot be read because the `team_lead` role is unresolved, list sessions only to diagnose the binding problem, stop worker-routing decisions for this tick, and report a session-binding blocker. Do not guess a TL session.
+
+### Step 1: Check progress for W1/W2/W3
+
+Resolve worker slots from `config.json`:
+
+- W1 = `workers[0]`
+- W2 = `workers[1]`, if present
+- W3 = `workers[2]`, if present
+
+For each configured worker, run a cheap-first pane state check:
 
 ```bash
 tmux display-message -p -t <session> 'cmd=#{pane_current_command} dead=#{pane_dead} in_mode=#{pane_in_mode} alt=#{alternate_on} cursor=#{cursor_x},#{cursor_y} size=#{pane_width}x#{pane_height}'
 tmux capture-pane -t <session> -p -S -20
 ```
 
-Classify into: `working`, `finished`, `blocked`, `idle`, `compacting`, `context_low`, `session_dead`.
+Classify each worker into: `working`, `finished`, `blocked`, `idle`, `compacting`, `context_low`, `session_dead`.
 
-### Step 1: Act per state (one action max)
+For each worker, collect a compact status packet:
 
-- `working` → no action this tick. Let the worker work. Exit.
-- `finished` → escalate capture to `-S -60`, apply evidence-package challenges (1, 4, 7 as applicable), send the worker's deliverables/evidence to TL, then ask TL for the next directive. Do NOT independently adjudicate verification or ask the owner for the next task. Exit.
-- `blocked` → inject the appropriate challenge (see "The 7 challenges" below). One challenge per tick. Exit.
-- `idle` → ask TL for the next plan-compliant deliverable for that worker. Do NOT just ping for status, and do NOT ask the owner for the next task. Exit.
-- `compacting` → no action. Don't send commands. Exit (wait for next tick).
-- `context_low` → send `/compact` to the worker. Exit.
-- `session_dead` → report and attempt recovery per the "Always Resume the Worker" golden rule. Exit.
+- worker name and slot
+- current state
+- current task, if visible
+- new deliverables, report paths, commit hashes, or evidence paths
+- blocker or missing info
+- whether TL has already supplied a next directive
+- whether a worker message is ready for this tick or must wait for more info
 
-### Step 2: Inject at most one challenge (if `challenge_depth` gates say yes)
+### Step 2: Send consolidated packet to TL
 
-Pick which challenge to inject based on what the worker is doing in the captured pane:
+After checking all workers, send TL one consolidated update through the Oysterun `send_cmd` command when there is anything TL should know or decide.
+
+Include:
+
+- TL response read at the start of the tick and how it was applied
+- W1/W2/W3 state summary
+- new deliverables or evidence packets
+- idle workers needing next directives
+- blockers, missing info, or session issues
+- worker messages you plan to send in this same tick, if already clear
+- information that is not ready and will be collected next round
+
+If there is no new TL-directed information, record `TL send_cmd: no-op` in the tick summary.
+
+### Step 3: Send commands to workers
+
+After the TL packet is sent, send worker-facing messages through `/send_tmux`.
+
+Allowed worker sends in the same tick:
+
+- TL-routed next-task assignments
+- evidence questions needed for TL
+- blocker follow-ups
+- `/compact` when context is low
+- resume/recovery instructions for the configured worker session
+
+If enough context exists to assign or ask the worker now, send the worker message in this same loop run. If context is incomplete, do not invent the instruction; write down what is missing and collect it in the next round.
+
+Pick worker challenges based on the captured pane:
+
 - Editing product code → challenges 1, 2, 5 (plan-alignment, reference-implementation, lesson-retention)
 - Running tests or reporting gate results → challenge 4 (evidence-package quality)
 - About to invent new code → challenges 3, 6 (tool/skill awareness, grep-before-invent)
 - Verification failed or "can't verify" reported → **challenge 7 mandatory** (verification-blocker evidence ladder)
 
-At most one challenge per tick. Send, then exit. Do NOT wait for the worker's answer inside this tick — next `/loop` firing will read the answer from the pane and continue.
+Use at most one message per worker per tick unless TL explicitly asked for multiple separate dispatches. Do not wait for worker answers inside this tick — the next `/loop` firing will read the answer from the pane and continue.
 
-### Step 3: Exit cleanly
+### Step 4: Exit cleanly
 
-- Record what was observed + action taken in a brief user-facing summary.
+- Record what was observed and what was sent in a brief user-facing summary.
+- The summary must list the four phases in order: `TL read_response`, `worker progress checks`, `TL send_cmd`, `worker sends`.
 - Flag any escalation triggers for TL (see "Escalation" below).
 - If the tick surfaced anything that should outlive this tick — a blocker, a TL-requested owner decision, or a follow-up reminder — append an entry to `prompts/_REMINDER.md` in this repo (see "Reminder ledger" below).
 - Exit. `/loop` will re-fire in 5 minutes.
@@ -420,7 +493,7 @@ Do NOT auto-delete the cron. Surface the recommendation and let the owner confir
 - **Never synthesize answers on behalf of the worker.** If the worker can't answer a challenge, they need to research it, not have the manager write it for them.
 - **Never modify the plan doc during the harness loop.** Plan changes go back to TL first; owner input happens only if TL requests product-owner judgment.
 - **Never let the worker give up on verification without walking challenge 7.** The full evidence ladder (7a through 7g applicable steps) must be exhausted and submitted to TL, even if it takes many ticks.
-- **At most one challenge per tick.** The worker needs time to answer before the next challenge.
+- **At most one challenge/message per worker per tick** unless TL explicitly asks for multiple dispatches. The loop may still read TL, check all workers, send one TL packet, and send ready worker messages in the same tick.
 
 ## Optional output artifact
 
@@ -455,15 +528,26 @@ This keeps TL anchored to their own written response rules, including the 3.6 de
 
 ### Rules This Tick
 
-#### 1. Worker Idle Or Finished: Ask TL Immediately
+#### 1. Fixed Tick Order
 
-- If any worker has completed its current task, or is idle with nothing queued, immediately query TL through `~/Projects/TmuxAgentManager/.claude/skills/oysterun_session_control.md` for the next task for that specific worker.
+Every loop firing must execute these commands/actions in order:
+
+1. Read TL through Oysterun `read_response`.
+2. Check W1/W2/W3 progress with cheap-first tmux state checks.
+3. Send one consolidated update/question packet to TL through Oysterun `send_cmd`, if there is anything TL should know or decide.
+4. Send ready worker instructions through `/send_tmux`.
+
+If enough context exists to assign work or ask a useful question, send the TL or worker message in the same loop run. If required information is not ready, collect the partial facts, explicitly mark what is missing, and carry that packet into the next round.
+
+#### 2. Worker Idle Or Finished: Include In TL Packet
+
+- If any worker has completed its current task, or is idle with nothing queued, include that worker in the same tick's TL packet.
 - Include the worker's just-completed deliverable, such as report paths, commit hashes, and key findings.
 - If the worker is idle, include its current idle reason and what it is standing by for.
-- Do not leave a finished or idle worker sitting without either an assigned next task from TL or an explicit TL "stand by" directive.
+- Do not leave a finished or idle worker sitting without either an assigned next task from TL, a same-tick worker dispatch, or an explicit TL "stand by" directive.
 - Even if a decision seems like it needs product-owner input, ask TL first. TL can translate if the owner's input is actually required.
 
-#### 2. Task Done: Report To TL Every Time
+#### 3. Task Done: Report To TL Every Time
 
 When any worker reports task completion or delivers new artifacts, send TL a consolidated deliverables update within the same tick. Include:
 
@@ -476,7 +560,7 @@ When any worker reports task completion or delivers new artifacts, send TL a con
 
 Structure this per worker with a separate section for each. Send one deliverables snapshot per tick, not a running diff. If there are no new deliverables this tick, skip this step.
 
-#### 3. Do Not Escalate To the owner For Task Decisions
+#### 4. Do Not Escalate To the owner For Task Decisions
 
 Override the old 3-tier escalation behavior for task, route, and architecture questions: those all go to TL first. the owner only gets:
 
@@ -486,7 +570,7 @@ Override the old 3-tier escalation behavior for task, route, and architecture qu
 
 If Manager is tempted to write "awaiting the owner decision on X", ask TL about X first. If TL says "this needs the owner", then produce the Tier 3 report. Not before.
 
-#### 4. Standard Harness Discipline
+#### 5. Standard Harness Discipline
 
 - Cheap-first pane state checks.
 - Apply the 7 challenges per worker state.
@@ -495,16 +579,16 @@ If Manager is tempted to write "awaiting the owner decision on X", ask TL about 
 - Tier 3: escalate to TL first, not the owner. Only go to the owner if TL explicitly defers to the product owner.
 - Never send `C-c` to workers. Use `C-u` for input clear and `Escape` for gentle interrupt.
 - Every worker-facing message must use `~/Projects/TmuxAgentManager/.claude/commands/send_tmux.md`; every TL-facing message must use `~/Projects/TmuxAgentManager/.claude/skills/oysterun_session_control.md`.
-- Use at most one worker-message action per tick.
+- Use at most one worker-message action per worker per tick unless TL explicitly requests multiple dispatches.
 
-#### 5. Worker Registry
+#### 6. Worker Registry
 
 - W1 (`workers[0]`): primary configured Codex worker.
 - W2 (`workers[1]`): secondary configured Codex worker, if present.
 - W3 (`workers[2]`): tertiary configured Codex worker, if present.
 
-#### 6. Tick-Level Summary To the owner
+#### 7. Tick-Level Summary To the owner
 
-At the end of each tick, produce a short user-facing summary to the owner. Frame it as a status relay, not a decision request. For example: "W1 working on X, W2 idle and asked TL for next task, W3 delivered report at `<path>`, sent to TL." Never ask "the owner, what do you want next?"
+At the end of each tick, produce a short user-facing summary to the owner. Frame it as a status relay, not a decision request. The summary must list `TL read_response`, `worker progress checks`, `TL send_cmd`, and `worker sends` in order. For example: "TL read. W1 working on X, W2 idle and asked TL for next task, W3 delivered report at `<path>`, sent to TL. Worker sends: W2 received TL assignment." Never ask "the owner, what do you want next?"
 
 Introduce yourself to TL only on the very first tick. Subsequent ticks go directly to the task/deliverable report flow.
