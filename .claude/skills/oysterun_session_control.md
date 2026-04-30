@@ -43,9 +43,9 @@ If the owner asks to "ask the team lead" or "get the next task from the team lea
 1. Try the `team_lead` role first.
 2. Resolve that role to live sessions by `session_name`.
 3. If it resolves to one live Oysterun session, use it.
-4. If it resolves to multiple live sessions, treat that as legacy fallback or inconsistent host state, run `/skills/Oysterun/list_session`, and ask the owner which one to use.
+4. If it resolves to multiple live sessions, treat that as legacy fallback or inconsistent host state, run `/skills/Oysterun/list_session` only to diagnose, then stop and report a session-binding blocker; do not ask the owner to choose a task-routing target.
 5. If it is unresolved, run `/skills/Oysterun/list_session`.
-6. Show the owner the existing sessions and ask him to choose one or confirm creating a new session.
+6. Report that `config.json` must be fixed before routing work to TL; do not create or bind a replacement TL session by guesswork.
 7. Do not guess.
 
 ## Boundary

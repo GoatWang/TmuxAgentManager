@@ -48,4 +48,4 @@ Persistent role binding should prefer stable `session_name`, not live `session_i
 
 - This is agent-manager meta-work. Do not delegate it.
 - Do not guess the target session from memory.
-- If the owner asks which session should be used for the team lead and the role is unresolved, show the live session list and ask him to choose one.
+- If the team lead role is unresolved or ambiguous, show the live session list as diagnostic context and report that `config.json` needs a stable `team.roles.team_lead.session_name`. Do not ask the owner to choose a task-routing target during worker supervision.

@@ -63,14 +63,14 @@ Repeat this cycle until a terminal state is reached:
 4. **Act based on state:**
 
    - **working** → continue the loop (go back to step 1)
-   - **finished** → exit the loop, proceed to Step 2 (verification)
-   - **blocked** → escalate capture to `-S -60`, diagnose the blocker, push the worker or report to the owner
+   - **finished** → exit the loop, proceed to Step 2 (evidence collection)
+   - **blocked** → escalate capture to `-S -60`, diagnose the blocker, push the worker or ask TL when a TL route is active
    - **idle** → push the worker for a progress update using correct send_method
    - **compacting** → sleep 30, check again, do NOT send any commands
    - **context_low** → send `/compact`, then sleep 30 and resume monitoring
    - **session_dead** → attempt recovery per "Always Resume the Worker" rule, then re-send task context if needed
 
-### Step 2: Verify on completion
+### Step 2: Collect evidence on completion
 
 When the worker reaches `finished`:
 
@@ -79,11 +79,13 @@ When the worker reaches `finished`:
    tmux capture-pane -t <session> -p -S -60
    ```
 
-2. Ask the worker targeted verification questions (using correct send_method):
+2. Ask the worker targeted evidence questions (using correct send_method):
    - "What files changed? Did you test? Any edge cases?"
    - Wait for the response (short sleep-and-check)
 
-3. Report results to the owner with:
+3. If a TL route is active, send the evidence packet to TL for verification/adjudication. PM does not decide pass/fail.
+
+4. Report status to the owner with:
    - What was done
    - What was tested
    - Any caveats or follow-ups needed
@@ -92,7 +94,7 @@ When the worker reaches `finished`:
 
 During the loop, watch for these and act immediately:
 
-- **Worker asks a question** → read it, answer if you can (from prior context or research), or escalate to the owner
+- **Worker asks a question** → read it, answer if you can (from prior context or research), or ask TL when a TL route is active
 - **Worker goes off-track** → send a redirect message, do NOT send C-c
 - **Worker makes repeated errors (3+)** → do web research on the error, bring findings back to the worker
 - **Worker context low warning** → send `/compact` and wait patiently
@@ -105,5 +107,5 @@ During the loop, watch for these and act immediately:
 - **Use Adaptive Pane Capture Depth** — start with `-S -20`, escalate only when needed
 - **Use Cheap-First Pane State** — read metadata before large captures
 - **Do not use `/loop`, cron, or background monitors** — this is manual sleep-and-wait only
-- **Report to the owner at natural milestones** — don't wait until 100% done if there's something noteworthy mid-task
+- **Report to the owner at natural milestones** — status only; do not ask the owner for task/verification decisions when TL is active
 - Before every send, clear stale input: `tmux send-keys -t <session> C-u`

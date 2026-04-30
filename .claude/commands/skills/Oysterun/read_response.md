@@ -55,9 +55,9 @@ If the owner explicitly wants the internal stream, add:
 
 Do not guess.
 
-Run `/skills/Oysterun/list_session`, show the live sessions, and ask the owner to choose one or confirm creating a new session.
+Run `/skills/Oysterun/list_session`, use the live sessions only to diagnose the routing problem, then stop and report a session-binding blocker. Do not ask the owner to choose a task-routing target or create a replacement TL session by guesswork.
 
-If the role is legacy agent-bound but multiple live sessions match, ask the owner which live session to read.
+If the role is legacy agent-bound but multiple live sessions match, stop and report the ambiguity as a configuration blocker.
 
 ## What to report
 

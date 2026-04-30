@@ -62,7 +62,7 @@ From the resolved active worker entry, read:
    If the worker is clearly in a long-running active step, use a longer wait such as `sleep 30` before checking again.
    If the quick slice is unclear, escalate to a medium capture before going deeper.
 
-5. **If the response shows a clear next task** that does NOT require the owner's opinion/decision (e.g. a straightforward bug fix, investigation, or implementation the agent already identified), send "do it" using the correct send method:
+5. **If the response shows a clear next task** that is already within the active TL/plan scope (e.g. a straightforward bug fix, investigation, or implementation the agent already identified), send "do it" using the correct send method:
 
    **If send_method is `two-line`:**
    ```bash
@@ -75,7 +75,7 @@ From the resolved active worker entry, read:
    tmux send-keys -t <session> "do it" Enter
    ```
 
-6. **If the next task requires the owner's input** (ambiguous direction, multiple options needing his preference, scope decisions), ask the worker for the clearest options/recommendation first, then report that status and recommendation to the owner. Do NOT ask the owner a bare question.
+6. **If the next task needs a decision** (ambiguous direction, multiple options, scope decisions), ask the worker for the clearest options/recommendation first, then ask TL when a TL route is active. Produce an owner-facing product-input request only if TL explicitly requests it. Do NOT ask the owner a bare question.
 
 7. Repeat the capture → assess → sleep → capture cycle manually for as long as needed. Do not hand this off to cron.
 

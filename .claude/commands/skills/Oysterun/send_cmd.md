@@ -53,9 +53,9 @@ Do not guess.
 Instead:
 
 1. Run `/skills/Oysterun/list_session`
-2. Show the owner the live choices
-3. If the role is legacy agent-bound but multiple live sessions match, ask which live session to use
-4. If the role is unbound or no live session exists, ask whether to use one of the existing sessions or intentionally create a new one
+2. Use the live choices only to diagnose the routing problem
+3. If the role is legacy agent-bound but multiple live sessions match, stop and report a session-binding blocker
+4. If the role is unbound or no live session exists, stop and report that `config.json` must be fixed before routing work
 
 ## What to report
 
@@ -70,4 +70,4 @@ Report:
 
 - This is agent-manager meta-work. Do not delegate it.
 - Never silently switch from one Oysterun session to another.
-- If `team_lead` is unresolved or ambiguous, stop and ask the owner with the live session list.
+- If `team_lead` is unresolved or ambiguous, stop and report the live session list as a configuration blocker; do not ask the owner to choose a task-routing target.

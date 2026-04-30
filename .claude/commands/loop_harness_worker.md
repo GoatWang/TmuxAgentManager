@@ -1,8 +1,8 @@
 # Loop Harness Worker
 
-Active worker supervision with structured challenges — the more demanding cousin of `/sleep_to_monitor`. Where sleep-to-monitor asks "is the worker finished?", this command asks "is the worker doing the RIGHT work, the RIGHT way, with EVIDENCE, per the plan — and if something fails, have they exhausted their own debug tooling before giving up?"
+Active worker supervision with structured challenges — the more demanding cousin of `/sleep_to_monitor`. Where sleep-to-monitor asks "is the worker finished?", this command asks "is the worker doing the RIGHT work, the RIGHT way, with EVIDENCE, per the plan — and if something fails, have they collected enough diagnostics for TL to adjudicate instead of giving up?"
 
-Use this when the task is architectural or multi-stage, when the worker has historically drifted from plan docs, or when verification discipline matters (because giving up too early on human-path verification is a recurring failure mode).
+Use this when the task is architectural or multi-stage, when the worker has historically drifted from plan docs, or when evidence discipline matters. PM does not own final verification; PM keeps workers collecting useful proof and routes that proof to TL for verification/adjudication.
 
 ## How to run (critical — this command is tick-based, not a long loop)
 
@@ -24,7 +24,7 @@ Use `/loop_harness_worker` when:
 - A non-trivial task is in flight and the plan is architectural (not a one-liner)
 - Multi-stage or multi-iteration work (spans more than one sub-task)
 - The worker has a history of drifting from the plan
-- Verification discipline matters — you need to enforce "exhaust debug tools before giving up" on human-path failures
+- Evidence discipline matters — you need to enforce "exhaust debug tools before giving up" on human-path failures and submit the evidence package to TL
 - You want active supervision, not just passive monitoring
 
 Skip this command (use `/sleep_to_monitor` instead) when:
@@ -34,7 +34,7 @@ Skip this command (use `/sleep_to_monitor` instead) when:
 
 ## Inputs (optional — passed through `/loop`)
 
-- `plan_doc` — absolute path to the authoritative plan the worker must align with. If omitted, auto-detect from the active worker's `working_dir/prompts/` folder (newest `*plan*.md`).
+- `plan_doc` — absolute path to the authoritative plan the worker must align with. Prefer the plan/proposal path supplied by TL. If omitted, auto-detect from the active worker's `working_dir/prompts/` folder (newest `*plan*.md`) only when that does not conflict with TL's current scope.
 - `challenge_depth` — `light` / `medium` / `strict` (default `medium`):
   - `light`: challenge only at task boundaries (when worker reports done or proposes a new approach)
   - `medium`: challenge at task boundaries + probabilistically every ~3rd tick
@@ -60,7 +60,7 @@ From the resolved worker, read:
 
 ## Mandatory communication routes
 
-**Worker tmux communication MUST use `/send_tmux`.** Every harness action that sends text to a worker tmux session — challenge injection, `/compact`, next-task push, verification question, blocker follow-up, recovery instruction, or TL-routed assignment — MUST execute the worker-send procedure defined in `~/Projects/TmuxAgentManager/.claude/commands/send_tmux.md`.
+**Worker tmux communication MUST use `/send_tmux`.** Every harness action that sends text to a worker tmux session — challenge injection, `/compact`, next-task push, evidence question, blocker follow-up, recovery instruction, or TL-routed assignment — MUST execute the worker-send procedure defined in `~/Projects/TmuxAgentManager/.claude/commands/send_tmux.md`.
 
 This means the harness must resolve the target worker, verify the tmux session exists, clear stale input with `C-u`, send via the worker's configured `send_method`, and confirm receipt before treating the message as sent. Do not hand-roll a separate worker-message path, do not skip the receipt check, and do not count text sitting in a prompt as communication.
 
@@ -68,25 +68,33 @@ If this tick targets W1/W2/W3 rather than only the active/default worker, apply 
 
 **TeamLead communication MUST use the Oysterun session-control skill.** Every TL interaction — asking for the next task, reporting deliverables, escalating a decision, or reading TL's response — MUST follow `~/Projects/TmuxAgentManager/.claude/skills/oysterun_session_control.md`.
 
-Use the `team_lead` role binding first, resolve live Oysterun sessions by `session_name`, and only list sessions or ask the owner to choose when the binding is ambiguous or unresolved. Resolve `TL_WORKINGDIR` from `config.json` at `team.roles.team_lead.working_dir` before composing TL guide references. Do not call `oysterun_control.py` freehand unless you are following that skill and its command docs.
+Use the `team_lead` role binding first and resolve live Oysterun sessions by `session_name`. If the binding is ambiguous or unresolved, list sessions only to diagnose the routing problem, then stop and report a session-binding blocker; do not ask the owner for a task-routing decision. Resolve `TL_WORKINGDIR` from `config.json` at `team.roles.team_lead.working_dir` before composing TL guide references. Do not call `oysterun_control.py` freehand unless you are following that skill and its command docs.
 
 ## Required reads per tick (manager side)
 
 Each tick re-reads these (no cross-tick state). Keep the reads small; this is a 5-minute cadence, not unlimited budget:
 
 1. `config.json` — resolve the active worker for this tick
-2. Worker's agent configuration (only if a challenge will be issued this tick):
+2. Worker's agent configuration (only if TL asks for delivery-path context, or if a worker blocker requires evidence about available instructions; PM does not override TL's dev process):
    - `<working_dir>/CLAUDE.md` (if present)
    - `<working_dir>/AGENTS.md` (if present)
    - `<working_dir>/.claude/CLAUDE.md` (if present)
-3. Available worker tooling (only if a challenge will be issued this tick):
+3. Available worker tooling (only if a blocker/evidence challenge needs it; PM does not attach or manage skill paths unless TL explicitly asks):
    - `<working_dir>/.claude/commands/` — list the slash commands the worker has
    - `<working_dir>/.claude/skills/` — list the skills the worker has
 4. Worker cheat sheet at `worker_cheatsheets/<worker_name>_cheatsheet.md` — refresh via `/read_workers_agent_settings` only if missing
-5. Plan doc (from `plan_doc` input, or auto-detected). Grep for keywords relevant to the challenge being issued this tick — don't re-read the whole doc every tick
+5. Plan doc (from `plan_doc` input, TL dispatch, or safe auto-detection). Grep for keywords relevant to the challenge being issued this tick — don't re-read the whole doc every tick
 6. Only if relevant to the current worker activity: recent prompts/ artifacts (handover reports, verification reports, deferral notes)
 
-If the plan doc cannot be located, report the error on the first tick and stop re-firing (delete the cron).
+If the plan doc cannot be located, or auto-detection might select an old V5/V6-adjacent plan that conflicts with TL's active scope, ask TL for the authoritative plan/proposal path and stop this tick. Do not guess from newest filename alone.
+
+For current Oysterun V6 work, the controlling proposal root is expected to be:
+
+```text
+{TL_WORKINGDIR}/prompts/requirements_proposals/Oysterun-Refactor_V6/
+```
+
+If TL dispatch names a different current proposal root, use TL's path and mention the discrepancy in the tick summary.
 
 ## Procedure (one tick)
 
@@ -104,9 +112,9 @@ Classify into: `working`, `finished`, `blocked`, `idle`, `compacting`, `context_
 ### Step 1: Act per state (one action max)
 
 - `working` → no action this tick. Let the worker work. Exit.
-- `finished` → escalate capture to `-S -60`, apply verification challenges (1, 4, 7 as applicable), report to the owner, then **per the Harness philosophy below: push the next plan-compliant deliverable immediately (Tier 1/2). Do NOT stop or hold unless ALL stages are truly complete (Tier 3) or the user explicitly stops.** Exit.
+- `finished` → escalate capture to `-S -60`, apply evidence-package challenges (1, 4, 7 as applicable), send the worker's deliverables/evidence to TL, then ask TL for the next directive. Do NOT independently adjudicate verification or ask the owner for the next task. Exit.
 - `blocked` → inject the appropriate challenge (see "The 7 challenges" below). One challenge per tick. Exit.
-- `idle` → **per the Harness philosophy below: identify the next plan-compliant deliverable and push it (Tier 1/2). Do NOT just ping for status. Only escalate to user as Tier 3 if there is genuinely no plan-compliant next deliverable AND no spirit-guided decision available.** Exit.
+- `idle` → ask TL for the next plan-compliant deliverable for that worker. Do NOT just ping for status, and do NOT ask the owner for the next task. Exit.
 - `compacting` → no action. Don't send commands. Exit (wait for next tick).
 - `context_low` → send `/compact` to the worker. Exit.
 - `session_dead` → report and attempt recovery per the "Always Resume the Worker" golden rule. Exit.
@@ -115,17 +123,17 @@ Classify into: `working`, `finished`, `blocked`, `idle`, `compacting`, `context_
 
 Pick which challenge to inject based on what the worker is doing in the captured pane:
 - Editing product code → challenges 1, 2, 5 (plan-alignment, reference-implementation, lesson-retention)
-- Running tests or reporting gate results → challenge 4 (evidence-quality)
+- Running tests or reporting gate results → challenge 4 (evidence-package quality)
 - About to invent new code → challenges 3, 6 (tool/skill awareness, grep-before-invent)
-- Verification failed or "can't verify" reported → **challenge 7 mandatory** (human-path verification ladder)
+- Verification failed or "can't verify" reported → **challenge 7 mandatory** (verification-blocker evidence ladder)
 
 At most one challenge per tick. Send, then exit. Do NOT wait for the worker's answer inside this tick — next `/loop` firing will read the answer from the pane and continue.
 
 ### Step 3: Exit cleanly
 
 - Record what was observed + action taken in a brief user-facing summary.
-- Flag any escalation triggers for the owner (see "Escalation" below).
-- If the tick surfaced anything that should outlive this tick — a blocker, a decision the user needs to make, or a follow-up reminder — append an entry to `prompts/_REMINDER.md` in this repo (see "Reminder ledger" below).
+- Flag any escalation triggers for TL (see "Escalation" below).
+- If the tick surfaced anything that should outlive this tick — a blocker, a TL-requested owner decision, or a follow-up reminder — append an entry to `prompts/_REMINDER.md` in this repo (see "Reminder ledger" below).
 - Exit. `/loop` will re-fire in 5 minutes.
 
 ## The 7 challenges
@@ -154,13 +162,14 @@ Before the worker invents new code or manually reimplements something:
 
 Especially important when the worker is about to run ad-hoc shell commands (simctl, xcrun, curl, sqlite3) that might already be wrapped in existing tooling.
 
-### Challenge 4 — Evidence quality
+### Challenge 4 — Evidence-package quality
 
 When the worker reports "done" or "green":
-- "What was the evidence? Gate output, commit hashes, test result excerpts, screenshot paths."
-- "Did the reconciliation cluster pass, or only the surface feature? (Feature-level pass while reconciliation breaks is not acceptable.)"
-- "Did you run the human-path verification, or only unit/compile gates?"
+- "What exact evidence should TL review? Include gate output, commit hashes, test result excerpts, screenshot/recording paths, logs, `.xcresult` bundles, and report paths."
+- "Which plan/proposal section and acceptance criteria does this evidence map to?"
+- "What evidence is still missing, and is the gap a product issue, harness issue, environment issue, or unresolved blocker?"
 - Never accept "I think it's fine" or "it looks right" as evidence.
+- PM does **not** decide pass/fail. PM ensures the worker submits a complete evidence package to TL, and TL verifies/adjudicates.
 
 ### Challenge 5 — Lesson retention (anti-pattern guard)
 
@@ -168,7 +177,7 @@ From the plan doc's lessons section, spot-check before each major worker action:
 - Is the worker about to create a custom-owned wrapper around a reference-provided storage primitive?
 - Is the worker about to declare a stage done while reconciliation bugs are open?
 - Is the worker about to build a stub that pretends to be a real upstream module?
-- Is the worker about to skip human-path verification?
+- Is the worker about to skip required evidence collection or omit a verification gap from the TL packet?
 
 If any answer is yes, interrupt and redirect.
 
@@ -179,9 +188,9 @@ Reflexive rule for any new code:
 - "Before you invent an accessibility identifier or selector, did you grep for the existing identifier pattern in the codebase?"
 - "Before you write a helper, did you check if one exists in a nearby file?"
 
-### Challenge 7 — Human-path verification ladder (verify-don't-give-up)
+### Challenge 7 — Verification-blocker evidence ladder
 
-**The most important discipline. When the worker reports a verification failure (XCUITest, Maestro, simctl-based, or manual), walk them through this ladder before accepting "verification failed" as terminal.**
+**The most important discipline. When the worker reports a verification failure (XCUITest, Maestro, simctl-based, or manual), walk them through this ladder before accepting "verification failed" as terminal. PM's job is to force useful evidence collection; TL owns the final verification judgment.**
 
 Because this command is tick-based, challenge 7 typically spans multiple ticks — one ladder step per tick. Do NOT cram the whole ladder into one message. Each tick: check if the last step has been attempted and answered, then send the next step.
 
@@ -222,15 +231,15 @@ Because this command is tick-based, challenge 7 typically spans multiple ticks �
 **Exit conditions for challenge 7:**
 
 Only after all applicable 7a-7g steps have been attempted (across ticks) with documented results may the worker:
-- Escalate to the owner with a named option set (e.g. "simulator rebuild OR switch simulator OR abandon this test")
-- Mark the verification as deferred, and only with an explicit deferral note that cites which challenges were attempted
-- Abandon the test run, and only with a specific blocker description (not a vague "can't verify")
+- Send TL a named option set or blocker packet (for example, "simulator rebuild OR switch simulator OR abandon this test")
+- Mark the verification as deferred for TL review, and only with an explicit deferral note that cites which challenges were attempted
+- Stop the test run, and only with a specific blocker description (not a vague "can't verify")
 
-## Escalation to the owner
+## Escalation to TL
 
 Escalate when:
 - Worker repeatedly resists the plan (3+ drift attempts on the same sub-task, tracked via recent commits or pane history)
-- Worker cites a plan gap the plan doesn't answer (product decision needed)
+- Worker cites a plan gap the plan doesn't answer
 - Worker hits a hard architectural blocker (stub-vs-real API mismatch, missing extraction dependency, etc.)
 - A known anti-pattern is about to be committed despite redirect
 - Challenge 7 ladder is fully exhausted and verification still fails
@@ -240,36 +249,38 @@ Never escalate without:
 - A named option set (A / B / C, not "what should we do")
 - The manager's own recommendation with reasoning
 
+Route this escalation to TL first. The owner only receives a decision request if TL explicitly asks for product-owner input; otherwise the owner receives status summaries and major deliverable notifications only.
+
 ## Harness philosophy — keep the worker moving
 
-**Default: harness the worker through ALL stages of the plan. Do NOT stop the loop until either (a) every stage is genuinely complete with verified evidence, or (b) the user explicitly stops.** A multi-stage refactor is dozens of hours of work — the harness only earns its keep by sustaining the worker through all of it without constant user babysitting. Heartbeat-only ticks where the worker holds idle and the manager just pings for status are NOT the harness — they are failure.
+**Default: harness the worker through ALL stages of the plan. Do NOT stop the loop until either (a) every stage is genuinely complete with TL-accepted evidence, or (b) the user explicitly stops.** A multi-stage refactor is dozens of hours of work — the harness only earns its keep by sustaining the worker through all of it without constant user babysitting. Heartbeat-only ticks where the worker holds idle and the manager just pings for status are NOT the harness — they are failure.
 
 ### Three-tier decision protocol
 
-When a tick surfaces something that *would normally need user approval*, classify into one of three tiers and act accordingly:
+When a tick surfaces something that *would normally need approval*, classify into one of three tiers and act accordingly:
 
 **Tier 1 — Plan-aligned auto-approve (push + reminder)**
 
 - The proposed action is clearly aligned with the agreed plan / direction doc / spirit report.
 - The "approval" is nominal — there's only one reasonable answer per the plan.
 - Examples: pushing the next deliverable in a defined Phase, applying a whitelist entry that follows the established pattern, picking between two equivalent plan-compliant options.
-- → Auto-approve, push the worker forward, write a `_REMINDER.md` entry noting the auto-decision and why.
+- → If this is within TL's existing dispatch, push the worker forward and write a `_REMINDER.md` entry noting the auto-decision and why. If it crosses into a new task/phase, ask TL first.
 
 **Tier 2 — Spirit-guided decision (decide + reminder)**
 
 - A judgment call where the plan doesn't explicitly answer but the spirit report / target / direction doc gives enough framing to decide.
 - Examples: choosing between PRUNEABLE vs RUNTIME-CRITICAL when evidence supports both; picking which sub-deliverable to start with when ordering isn't strict; resolving a minor scope ambiguity that doesn't change architectural direction.
-- → Decide based on spirit/target, push the worker forward, write a `_REMINDER.md` entry explaining the decision and the spirit reasoning.
+- → Decide only within TL's existing dispatch based on spirit/target, push the worker forward, and write a `_REMINDER.md` entry explaining the decision and the spirit reasoning. If uncertain, ask TL.
 
-**Tier 3 — Hard conflict / hard blocker (ask user)**
+**Tier 3 — Hard conflict / hard blocker (ask TL)**
 
 - A genuine conflict where the plan's spirit doesn't resolve it, OR the worker is physically blocked from proceeding (missing access, missing dependency, ambiguous product requirement, architecturally divergent paths with different long-term implications).
 - Examples: choosing a UX behavior the plan didn't anticipate; product feature decision; environment/infra access the worker can't get; two architecturally different paths each with non-trivial consequences.
-- → Halt the worker, produce a **Tier 3 escalation report** (see format below), attach the path from `_REMINDER.md`, and present a short Telegram summary pointing to the report. This is the **only** case worth interrupting the user.
+- → Halt the worker and ask TL with a named option set. Produce an owner-facing **Tier 3 escalation report** only if TL explicitly requests product-owner input.
 
-### Tier 3 escalation report — required format
+### Tier 3 owner escalation report — required format
 
-Whenever a Tier 3 escalation fires, the manager MUST produce a proper escalation report file (not just a `_REMINDER.md` entry). The file lets the owner open one doc and see everything needed to decide.
+Whenever TL explicitly requests owner product-owner input, the manager MUST produce a proper escalation report file (not just a `_REMINDER.md` entry). The file lets the owner open one doc and see everything needed to decide.
 
 **File location:** `~/Projects/TmuxAgentManager/prompts/YYYYMMDD_N_escalation_<feature-slug>.md` (where `N` is sequential for the day and `<feature-slug>` is 2–4 words identifying the feature, e.g. `role_design`, `approval_authorship`, `composer_cutover`).
 
@@ -323,24 +334,24 @@ Before writing ANY escalation report, the manager MUST:
 
 Do NOT stop the cron. Keep firing until:
 
-- Every stage in the plan is genuinely done (every deliverable + verification passed), AND a final `_REMINDER.md` entry summarizes "all work done, evidence cited, recommend stop", OR
+- Every stage in the plan is genuinely done (every deliverable + TL-accepted evidence complete), AND a final `_REMINDER.md` entry summarizes "all work done, evidence cited, recommend stop", OR
 - The user explicitly says stop.
 
 ### Practical examples
 
-- Worker delivered Phase X deliverable A. Plan defines deliverable B as next. → Tier 1: push deliverable B immediately. Write reminder noting the auto-push.
-- Worker delivered Phase X completely. Plan defines Phase X+1 as next. → Tier 1: push Phase X+1 start immediately. Write reminder summarizing X complete + X+1 starting.
+- Worker delivered Phase X deliverable A. TL's dispatch defines deliverable B as next. → Tier 1: push deliverable B immediately. Write reminder noting the auto-push.
+- Worker delivered Phase X completely. Ask TL whether Phase X+1 is authorized by the proposal/guide. If TL dispatches it, push the worker; if TL says a gate is pending, hold.
 - Worker hits a small ambiguity ("should I bisect attribute foo or bar first?"). Spirit report says "stable chat flow first" → bisect the one that affects chat flow first. → Tier 2: decide + push + reminder.
-- Worker hits a real architectural fork ("AccountContext: real protocol implementation vs facade pattern, different long-term cost"). → Tier 3: ask user with named options.
+- Worker hits a real architectural fork ("AccountContext: real protocol implementation vs facade pattern, different long-term cost"). → Tier 3: ask TL with named options. Owner input happens only if TL requests it.
 
 ### What NOT to do
 
-- Do NOT pause the loop because "the owner might want to review first" — write the reminder, push the next deliverable. User reviews on their own time.
+- Do NOT pause the loop because "the owner might want to review first" — ask TL for the next directive. Owner review only blocks if TL/proposal/guide says an Owner gate is active.
 - Do NOT recommend loop stop after each Phase completion — the harness's job is to drive every Phase, not just one.
 
 ## Reminder ledger (`prompts/_REMINDER.md`)
 
-Whenever a tick surfaces something important that should outlive this tick — a hard blocker, a decision the user needs to make, or a follow-up reminder — append an entry to `prompts/_REMINDER.md` in this manager repo (TmuxAgentManager root, NOT the worker's project). The file accumulates across the session and serves as the user's review queue when they next sit down. `_REMINDER.md` is local-only scratch/report state and must never be staged, committed, or pushed.
+Whenever a tick surfaces something important that should outlive this tick — a hard blocker, a TL-requested owner decision, or a follow-up reminder — append an entry to `prompts/_REMINDER.md` in this manager repo (TmuxAgentManager root, NOT the worker's project). The file accumulates across the session and serves as the user's review queue when they next sit down. `_REMINDER.md` is local-only scratch/report state and must never be staged, committed, or pushed.
 
 **語言：繁體中文。** 所有 _REMINDER.md 條目必須用繁體中文撰寫。
 
@@ -349,7 +360,7 @@ Each entry must include:
 - **時間** — 記錄時間 (e.g. `2026-04-17 14:32`)
 - **類型** — `阻塞中`, `需要決策`, `提醒`
 - **相關文件** — 報告路徑、commit hash 等可直接打開的參考資料
-- **白話說明** — 用白話解釋問題是什麼、為什麼重要、the owner 需要決定什麼
+- **白話說明** — 用白話解釋問題是什麼、為什麼重要、TL 是否已要求 owner 做 product-owner 決策
 - **建議下一步** — manager 的建議
 - **`需要決策` 條目必須附上對應的 Tier 3 報告絕對路徑**
 
@@ -357,7 +368,7 @@ Append-only. Never overwrite or delete prior entries.
 
 When to write:
 
-- A challenge from the 7 challenges surfaced something the user must decide (escalation threshold reached).
+- A challenge from the 7 challenges surfaced a TL-requested owner decision (escalation threshold reached).
 - A repeating issue that the user should know about even if not blocking right now (e.g. "context low for the 3rd tick in a row, worker may run out before the next deliverable").
 - A surprise from the worker that contradicts an assumption in the plan doc.
 - A side-effect from a directive that the user might want to revisit later (e.g. "redirected the worker per architecture switch; original Wave 0 commits remain in branch as exploratory — user may want to clean these up").
@@ -367,15 +378,15 @@ When to write:
 ```
 ## 2026-04-17 14:32 — 阻塞中
 相關文件：/Users/.../prompts/20260417_2_escalation_phase2_downloader_boundary.md
-問題：Phase 2 downloader boundary 決策尚未做出，所有 worker 閒置中。三個選項（A: 留在 HostAPIClient / B: 移到 Bridge / C: 直接走 Postbox）需要 the owner 拍板。
+問題：TL 明確要求 owner 針對 Phase 2 downloader boundary 做 product-owner 決策，所有 worker 閒置中。三個選項（A: 留在 HostAPIClient / B: 移到 Bridge / C: 直接走 Postbox）需要 owner 拍板。
 建議下一步：請閱讀報告後回覆 A/B/C。Manager 推薦 Option A（最小擾動、符合 phase 順序）。
 ```
 
 Do NOT write to `_REMINDER.md` for routine tick events (worker still working, normal commits landing, scheduled `/compact`s). Reserve it for things the user genuinely needs to see when they review later — quality over quantity.
 
-**EXCEPTION — idle-blocker reminder (每個 tick 都要提醒):**
+**EXCEPTION — TL-requested owner decision idle reminder (每個 tick 都要提醒):**
 
-When ALL workers are idle because of a pending Tier 3 decision, each tick MUST output a short reminder to the owner in the user-facing summary:
+When ALL workers are idle because TL explicitly requested an owner product decision, each tick MUST output a short reminder to the owner in the user-facing summary:
 
 ```
 ⏳ 所有 worker 閒置中，等待你的決策。
@@ -386,16 +397,16 @@ When ALL workers are idle because of a pending Tier 3 decision, each tick MUST o
 
 This is NOT written to `_REMINDER.md` — it is the tick's user-facing output text. The goal is to nudge the owner every tick until he decides.
 
-## Parallel development permission rule (必須獲准)
+## Parallel development routing rule
 
-**NEVER start parallel code development (letting W2/W3 work on code alongside W1) without the owner's explicit permission.** Doc-only preflight work is OK without permission. Actual code commits from multiple workers require the owner to say yes first.
+Do not authorize parallel code development yourself. Ask TL. If the TL guide or requirements proposal requires owner permission for a parallel-code boundary, TL is responsible for requesting that product-owner input.
 
 ## Exit signals (stop the `/loop`)
 
 Recommend to the owner that the `/loop` be stopped (via `CronDelete`) when:
-- The worker reports task complete with evidence that passes the applicable challenges (verified this tick)
+- TL reports the worker task complete with accepted evidence, or the worker evidence packet has been delivered to TL and TL explicitly says no further worker action is needed
 - the owner explicitly stops the command
-- A genuine blocker surfaces that needs a product decision
+- A genuine blocker surfaces and TL explicitly requests owner product-owner input
 - Plan doc is missing or unreadable (on first tick only)
 
 Do NOT auto-delete the cron. Surface the recommendation and let the owner confirm.
@@ -405,10 +416,10 @@ Do NOT auto-delete the cron. Surface the recommendation and let the owner confir
 - **One tick per firing.** Do not `sleep` inside the command to extend the tick. `/loop` owns the cadence.
 - **Never send C-c** to the worker. Use `C-u` to clear stale input, `Escape` to gently interrupt.
 - **Never skip the required reads (that tick's subset).** If the worker cheat sheet is missing and a challenge requires it, run `/read_workers_agent_settings` first.
-- **Never accept vague "done" reports** — demand evidence (commit hash, gate output excerpt, file:line citations, screenshot paths).
+- **Never accept vague "done" reports** — demand an evidence packet for TL (commit hash, gate output excerpt, file:line citations, screenshot/recording paths, logs, and report paths as applicable).
 - **Never synthesize answers on behalf of the worker.** If the worker can't answer a challenge, they need to research it, not have the manager write it for them.
-- **Never modify the plan doc during the harness loop.** Plan changes go back to the owner first.
-- **Never let the worker give up on verification without walking challenge 7.** The full ladder (7a through 7g applicable steps) must be exhausted, even if it takes many ticks.
+- **Never modify the plan doc during the harness loop.** Plan changes go back to TL first; owner input happens only if TL requests product-owner judgment.
+- **Never let the worker give up on verification without walking challenge 7.** The full evidence ladder (7a through 7g applicable steps) must be exhausted and submitted to TL, even if it takes many ticks.
 - **At most one challenge per tick.** The worker needs time to answer before the next challenge.
 
 ## Optional output artifact
