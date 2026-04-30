@@ -1,0 +1,73 @@
+---
+description: Send a command or question into an Oysterun session using a direct Host API call.
+argument-hint: "[optional target] <message>"
+disable-model-invocation: true
+---
+
+# /skills/Oysterun/send_cmd
+
+Queue a message into an Oysterun session without using tmux.
+
+## Target resolution
+
+The first argument may be:
+
+- a configured team role such as `team_lead`
+- a concrete `sessionName`
+- a concrete `session_id`
+- a concrete legacy `agent_id`
+
+If no target is supplied, default to the `team_lead` role from `config.json`.
+
+For persistent team roles in `config.json`, prefer stable `session_name` binding.
+Do not persist live `session_id`, and treat `agent_id` as legacy compatibility only.
+
+## Examples
+
+- `/skills/Oysterun/send_cmd team_lead give me progress report`
+- `/skills/Oysterun/send_cmd oysterun-chat-telegram-refactor-v2-025fc give me progress report`
+- `/skills/Oysterun/send_cmd 0a02921a-185b-42e7-8109-33be12f32ecf give me progress report`
+
+## Procedure
+
+1. Parse `$ARGUMENTS`.
+2. If the first token is a role/session selector, use it as `--target`.
+3. Otherwise, treat the whole argument string as the message and default the target to `team_lead`.
+
+Run one of:
+
+```bash
+python3 tool_scripts/oysterun_control.py send --target "<target>" "<message>"
+```
+
+or
+
+```bash
+python3 tool_scripts/oysterun_control.py send "<message>"
+```
+
+## If target resolution fails
+
+Do not guess.
+
+Instead:
+
+1. Run `/skills/Oysterun/list_session`
+2. Show the owner the live choices
+3. If the role is legacy agent-bound but multiple live sessions match, ask which live session to use
+4. If the role is unbound or no live session exists, ask whether to use one of the existing sessions or intentionally create a new one
+
+## What to report
+
+Report:
+
+- the resolved target label
+- the resolved `sessionName` and `sessionId`
+- the queued `message_id`
+- the returned delivery state
+
+## Rules
+
+- This is agent-manager meta-work. Do not delegate it.
+- Never silently switch from one Oysterun session to another.
+- If `team_lead` is unresolved or ambiguous, stop and ask the owner with the live session list.

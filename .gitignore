@@ -1,0 +1,12 @@
+uploads/
+# Local-only agent scratch/report artifacts. Never track or commit these.
+prompts/
+.claude/scheduled_tasks.lock
+.env
+.env1
+.env2
+.env3
+tmux_agents.json
+.oysterun
+worker_cheatsheets/
+config.json

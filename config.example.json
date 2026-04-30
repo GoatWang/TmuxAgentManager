@@ -1,0 +1,66 @@
+{
+  "description": "Unified local manager config. Copy this file to ignored config.json and fill in local values. Agent entries use type=tmux; Oysterun roles use type=Oysterun.",
+  "workers": [
+    {
+      "type": "tmux",
+      "name": "<worker_name_1>",
+      "project": "<project_name>",
+      "working_dir": "~/Projects/<worker_project>",
+      "session": "<tmux_session_name_1>",
+      "send_method": "two-line",
+      "notes": "<description of worker 1>"
+    },
+    {
+      "type": "tmux",
+      "name": "<worker_name_2>",
+      "project": "<project_name>",
+      "working_dir": "~/Projects/<worker_project>",
+      "session": "<tmux_session_name_2>",
+      "send_method": "two-line",
+      "notes": "<description of worker 2>"
+    }
+  ],
+  "worker": {
+    "type": "tmux",
+    "name": "<worker_name_1>",
+    "project": "<project_name>",
+    "working_dir": "~/Projects/<worker_project>",
+    "session": "<tmux_session_name_1>",
+    "send_method": "two-line",
+    "notes": "Legacy alias for workers[0]."
+  },
+  "send_methods": {
+    "two-line": {
+      "description": "For worker sessions: send text first, then C-m separately. Enter does not submit.",
+      "example": [
+        "tmux send-keys -t <session> \"<message>\"",
+        "tmux send-keys -t <session> C-m"
+      ]
+    },
+    "enter": {
+      "description": "For regular sessions: append Enter to send-keys.",
+      "example": [
+        "tmux send-keys -t <session> \"<message>\" Enter"
+      ]
+    }
+  },
+  "oysterun": {
+    "base_url": "http://127.0.0.1:9902",
+    "dashboard_user": "admin",
+    "dashboard_password": "replace-me",
+    "default_nickname": "Manager",
+    "default_transcript_limit": 12
+  },
+  "team": {
+    "roles": {
+      "team_lead": {
+        "type": "Oysterun",
+        "session_name": null,
+        "working_dir": "~/Projects/<teamlead_project>",
+        "guide_path": "{TL_WORKINGDIR}/.teamlead/_TEAMLEAD_GUIDE.md",
+        "stop_routing_rule_path": "{TL_WORKINGDIR}/.teamlead/_STOP_ROUTING_RULE.md",
+        "notes": "Bind this to the stable Oysterun session name for the team lead. Resolve TL_WORKINGDIR from working_dir before composing TL guide references. The manager should resolve the live session at runtime and ask if the binding is missing or no live session matches. `agent_id` remains legacy compatibility only."
+      }
+    }
+  }
+}
