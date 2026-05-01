@@ -66,6 +66,49 @@ This means the harness must resolve the target worker, verify the tmux session e
 
 If this tick targets W1/W2/W3 rather than only the active/default worker, apply the same `/send_tmux` protocol to that specific worker's resolved `session` and `send_method`; preserve the worker's original settings.
 
+### Worker send receipt and recovery overlay
+
+When `/loop_harness_worker` sends a worker-facing message, it MUST apply this receipt overlay on top of `/send_tmux`. This is mandatory because a typed tmux input line is not the same as a submitted message.
+
+**Send timing:**
+
+- For `send_method: two-line`, send the message text first, then wait 3 seconds, then send `C-m`.
+- For `send_method: enter`, send the message text first, then wait 3 seconds, then send `Enter`.
+- After the submit key, wait another 3 seconds and capture the last 20 lines to verify receipt.
+
+Example for `two-line`:
+
+```bash
+tmux send-keys -t <session> "<message>"
+sleep 3
+tmux send-keys -t <session> C-m
+sleep 3
+tmux capture-pane -t <session> -p -S -20
+```
+
+**What "message not sent" means:**
+
+A message is **not sent / not submitted** when the capture shows the message text sitting at the worker input prompt (for example after the Codex `›` prompt), but there is no sign that the agent started processing it. This includes cases like W3 / `OysterunFast` where the long assignment text is visible in the prompt, the model/status line is visible, and there is no `Working`, tool call, plan update, response text, or other post-submit activity after the message.
+
+Do NOT count any of these as sent:
+
+- the message text appears wrapped across the tmux pane but the prompt is still waiting
+- the message is concatenated with previous prompt text and no worker response begins
+- the pane is idle with the model/status line visible and no new tool/activity markers
+- the capture only proves that keys were typed, not that the submit key was accepted
+
+**Recovery for "message not sent":**
+
+If the message is visible in the prompt but not executing, do not retype the message and do not clear it with `C-u`. Submit the already-typed input one more time:
+
+- For `send_method: two-line`, send exactly one extra `C-m`.
+- For `send_method: enter`, send exactly one extra `Enter`.
+- Sleep 10 seconds, then capture the last 30 lines.
+- If the worker now shows `Working`, tool activity, a plan update, or response text after the message, mark receipt confirmed.
+- If the message is still sitting in the prompt after the one extra submit key, stop retrying blindly. Classify the send as failed, record `worker sends: failed_not_submitted`, and diagnose pane/session state before sending anything else.
+
+Only use `C-u` before a fresh new message. Once the intended message is already visible in the prompt, `C-u` would erase the unsent payload and hide the failure instead of fixing it.
+
 **TeamLead communication MUST use the Oysterun session-control skill.** Every TL interaction — asking for the next task, reporting deliverables, escalating a decision, or reading TL's response — MUST follow `~/Projects/TmuxAgentManager/.claude/skills/oysterun_session_control.md`.
 
 Use the `team_lead` role binding first and resolve live Oysterun sessions by `session_name`. If the binding is ambiguous or unresolved, list sessions only to diagnose the routing problem, then stop and report a session-binding blocker; do not ask the owner for a task-routing decision. Resolve `TL_WORKINGDIR` from `config.json` at `team.roles.team_lead.working_dir` before composing TL guide references. Do not call `oysterun_control.py` freehand unless you are following that skill and its command docs.
@@ -74,11 +117,21 @@ Use the `team_lead` role binding first and resolve live Oysterun sessions by `se
 
 Before sending or reading anything, PM must locate and follow these exact docs:
 
-- Worker send protocol: `~/Projects/TmuxAgentManager/.claude/commands/send_tmux.md`
-- Oysterun session-control skill: `~/Projects/TmuxAgentManager/.claude/skills/oysterun_session_control.md`
-- TL read protocol: `~/Projects/TmuxAgentManager/.claude/commands/skills/Oysterun/read_response.md`
-- TL send protocol: `~/Projects/TmuxAgentManager/.claude/commands/skills/Oysterun/send_cmd.md`
-- TL session listing / binding diagnosis: `~/Projects/TmuxAgentManager/.claude/commands/skills/Oysterun/list_session.md`
+- `/send_tmux` / worker send protocol
+  - Full path: `~/Projects/TmuxAgentManager/.claude/commands/send_tmux.md`
+  - Repo-relative path: `.claude/commands/send_tmux.md`
+- Oysterun session-control skill
+  - Full path: `~/Projects/TmuxAgentManager/.claude/skills/oysterun_session_control.md`
+  - Repo-relative path: `.claude/skills/oysterun_session_control.md`
+- `read_response` / TL read protocol
+  - Full path: `~/Projects/TmuxAgentManager/.claude/commands/skills/Oysterun/read_response.md`
+  - Repo-relative path: `.claude/commands/skills/Oysterun/read_response.md`
+- `send_cmd` / TL send protocol
+  - Full path: `~/Projects/TmuxAgentManager/.claude/commands/skills/Oysterun/send_cmd.md`
+  - Repo-relative path: `.claude/commands/skills/Oysterun/send_cmd.md`
+- `list_session` / TL session listing and binding diagnosis
+  - Full path: `~/Projects/TmuxAgentManager/.claude/commands/skills/Oysterun/list_session.md`
+  - Repo-relative path: `.claude/commands/skills/Oysterun/list_session.md`
 
 Use the skill doc first for routing rules, then the specific Oysterun command doc for the concrete action (`read_response`, `send_cmd`, or `list_session`). Do not skip directly to helper scripts when these docs exist.
 
@@ -113,9 +166,15 @@ If TL dispatch names a different current proposal root, use TL's path and mentio
 Every tick MUST perform the same four phases in this exact order:
 
 1. **Read TL response** — use the Oysterun `read_response` command for TL first.
+   - Full path: `~/Projects/TmuxAgentManager/.claude/commands/skills/Oysterun/read_response.md`
+   - Repo-relative path: `.claude/commands/skills/Oysterun/read_response.md`
 2. **Check all configured workers** — inspect W1, W2, and W3 progress before deciding what to send.
 3. **Send updates/questions to TL** — use the Oysterun `send_cmd` command for TL with the consolidated worker state, deliverables, blockers, and questions.
+   - Full path: `~/Projects/TmuxAgentManager/.claude/commands/skills/Oysterun/send_cmd.md`
+   - Repo-relative path: `.claude/commands/skills/Oysterun/send_cmd.md`
 4. **Send commands to workers** — use `/send_tmux` for worker tmux sessions with TL-routed assignments, evidence questions, or blocker follow-ups.
+   - Full path: `~/Projects/TmuxAgentManager/.claude/commands/send_tmux.md`
+   - Repo-relative path: `.claude/commands/send_tmux.md`
 
 Do these phases even if one target has no new action. A phase with no action should record `no-op` and why.
 
@@ -413,13 +472,19 @@ Do NOT stop the cron. Keep firing until:
 ### Practical examples
 
 - Worker delivered Phase X deliverable A. TL's dispatch defines deliverable B as next. → Tier 1: push deliverable B immediately. Write reminder noting the auto-push.
-- Worker delivered Phase X completely. Ask TL whether Phase X+1 is authorized by the proposal/guide. If TL dispatches it, push the worker; if TL says a gate is pending, hold.
+- Worker delivered Phase X completely. Ask TL whether Phase X+1 is authorized by the proposal/guide. If TL dispatches it, push the worker; if TL says a real gate is pending, hold and report the active gate.
 - Worker hits a small ambiguity ("should I bisect attribute foo or bar first?"). Spirit report says "stable chat flow first" → bisect the one that affects chat flow first. → Tier 2: decide + push + reminder.
 - Worker hits a real architectural fork ("AccountContext: real protocol implementation vs facade pattern, different long-term cost"). → Tier 3: ask TL with named options. Owner input happens only if TL requests it.
 
 ### What NOT to do
 
-- Do NOT pause the loop because "the owner might want to review first" — ask TL for the next directive. Owner review only blocks if TL/proposal/guide says an Owner gate is active.
+- Do NOT pause the loop because "the owner might want to review first" — ask TL for the next directive. For current V6, Owner review/recording/manual-lane items are reminders, not blockers; Manager/PM should continue routing TL-approved work while repeating the reminder in Owner-facing updates.
+
+Current V6 start/execution rule:
+
+- TL owns V6 base replacement, TL transfer, V6 Phase 1 worktree creation, product-code work inside a TL-reviewed phase plan, and simulator/xcodebuild/service runs needed by that plan.
+- Owner recording review and Owner-manual lane items are non-blocking reminders that must appear in Owner-facing updates until Owner confirms completion or says to stop reminding.
+- Owner blocking remains only for final repo-main promotion, release / owner-facing product install, or a genuine product-owner decision that TL cannot decide from proposal / standards / evidence.
 - Do NOT recommend loop stop after each Phase completion — the harness's job is to drive every Phase, not just one.
 
 ## Reminder ledger (`prompts/_REMINDER.md`)
@@ -533,9 +598,15 @@ This keeps TL anchored to their own written response rules, including the 3.6 de
 Every loop firing must execute these commands/actions in order:
 
 1. Read TL through Oysterun `read_response`.
+   - Full path: `~/Projects/TmuxAgentManager/.claude/commands/skills/Oysterun/read_response.md`
+   - Repo-relative path: `.claude/commands/skills/Oysterun/read_response.md`
 2. Check W1/W2/W3 progress with cheap-first tmux state checks.
 3. Send one consolidated update/question packet to TL through Oysterun `send_cmd`, if there is anything TL should know or decide.
+   - Full path: `~/Projects/TmuxAgentManager/.claude/commands/skills/Oysterun/send_cmd.md`
+   - Repo-relative path: `.claude/commands/skills/Oysterun/send_cmd.md`
 4. Send ready worker instructions through `/send_tmux`.
+   - Full path: `~/Projects/TmuxAgentManager/.claude/commands/send_tmux.md`
+   - Repo-relative path: `.claude/commands/send_tmux.md`
 
 If enough context exists to assign work or ask a useful question, send the TL or worker message in the same loop run. If required information is not ready, collect the partial facts, explicitly mark what is missing, and carry that packet into the next round.
 
