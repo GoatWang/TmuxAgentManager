@@ -322,8 +322,10 @@ def cmd_send(args: argparse.Namespace) -> int:
 def should_include_message(message: dict[str, Any], include_internal: bool) -> bool:
     if include_internal:
         return True
-    message_type = message.get("message_type")
-    return message_type in (None, "", "thinking")
+    message_type = str(message.get("message_type") or "").strip().lower()
+    if message_type in ("thinking", "tool_call", "tool_result", "system"):
+        return False
+    return True
 
 
 def render_message(message: dict[str, Any]) -> str:

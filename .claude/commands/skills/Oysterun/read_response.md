@@ -44,7 +44,7 @@ or, for the default `team_lead` target:
 python3 tool_scripts/oysterun_control.py read --limit <N>
 ```
 
-By default this shows human-facing transcript rows and hides `tool_call` / `tool_result` noise.
+By default this shows human-facing transcript rows and hides `thinking`, `tool_call`, `tool_result`, and `system` noise.
 If the owner explicitly wants the internal stream, add:
 
 ```bash
@@ -66,3 +66,5 @@ Summarize:
 - the resolved target
 - the latest assistant/user rows that matter
 - whether the session appears idle, responding, or blocked from the transcript evidence
+
+Do not treat `assistant (thinking)` rows as TL directives or as evidence that TL is still processing unless the owner explicitly requested `--include-internal`. A formal non-thinking assistant message overrides earlier thinking rows.

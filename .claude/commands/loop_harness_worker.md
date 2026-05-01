@@ -4,6 +4,8 @@
 
 Keep this command clean and isolated. Do not add project-specific phase names, stage names, version labels, release labels, proposal roots, roadmap details, or product-specific execution rules. Put those details in TL dispatches, plan docs, or manager-side status notes, not in this reusable command file.
 
+Prefix every outbound message with `[PM -> TL]` or `[PM -> worker]` as appropriate.
+
 Active worker supervision with structured challenges — the more demanding cousin of `/sleep_to_monitor`. Where sleep-to-monitor asks "is the worker finished?", this command asks "is the worker doing the RIGHT work, the RIGHT way, with EVIDENCE, per the plan — and if something fails, have they collected enough diagnostics for TL to adjudicate instead of giving up?"
 
 Use this when the task is architectural or multi-step, when the worker has historically drifted from plan docs, or when evidence discipline matters. PM does not own final verification; PM keeps workers collecting useful proof and routes that proof to TL for verification/adjudication.
@@ -186,6 +188,8 @@ Capture:
 - TL requests for evidence or owner input
 - TL "stand by" or "stop routing" instructions
 
+Interpret TL transcript rows by the latest non-internal assistant/user message. Do not classify TL as "still thinking" from `assistant (thinking)` rows; those are internal reasoning, not formal directives. If the latest formal TL message says to stop periodic idle ticks, do not send idle heartbeat/status updates or ask for another directive. Exit the tick unless the owner/TL sends a new request, a worker state changes, a worker leaves standby unexpectedly, or an operational failure appears.
+
 If TL cannot be read because the `team_lead` role is unresolved, list sessions only to diagnose the binding problem, stop worker-routing decisions for this tick, and report a session-binding blocker. Do not guess a TL session.
 
 ### Step 1: Check progress for W1/W2/W3
@@ -200,8 +204,43 @@ For each configured worker, run a cheap-first pane state check:
 
 ```bash
 tmux display-message -p -t <session> 'cmd=#{pane_current_command} dead=#{pane_dead} in_mode=#{pane_in_mode} alt=#{alternate_on} cursor=#{cursor_x},#{cursor_y} size=#{pane_width}x#{pane_height}'
-tmux capture-pane -t <session> -p -S -20
+tmux capture-pane -t <session> -p -J -S -30
 ```
+
+### Worker pane state classifier
+
+Use this deterministic classifier before reasoning about the worker state. This exists because light manager models have previously misread a Codex tmux pane as "still active" when it was already idle.
+
+Important rule: `cmd=node dead=0` does **not** mean the worker is working. Codex runs as a long-lived `node` process while idle. Treat `cmd=node dead=0` only as "the Codex process is alive".
+
+Classify the pane using the bottom of `tmux capture-pane -p -J -S -30`:
+
+1. `worker_idle_prompt_visible` / `finished`
+   - The bottom of the capture shows a Codex prompt such as:
+     ```text
+     › Explain this codebase
+
+       gpt-5.5 xhigh · ~/Projects/...
+     ```
+   - This means the worker is idle and ready for the next instruction.
+   - A summary immediately above the prompt is the worker's last completed response, not active work.
+2. `worker_running`
+   - No idle prompt is visible, and the bottom shows active generation or tool activity such as `Working`, a command still streaming, an unfinished answer, or a tool section that has not returned to the prompt.
+3. `ambiguous`
+   - The capture ends mid-sentence, mid-command, or before the status line/prompt can be seen.
+   - Escalate capture depth to `tmux capture-pane -t <session> -p -J -S -100`.
+   - If still ambiguous, wait one tick and compare whether the bottom lines changed. Do not report "still active" from metadata alone.
+4. `shell_prompt`
+   - A shell prompt is visible instead of the Codex prompt. Follow session recovery rules; do not treat it as a completed worker answer.
+
+Never classify a worker as `working` solely because:
+
+- metadata says `cmd=node`
+- metadata says `dead=0`
+- the latest visible summary says files were updated
+- the capture includes recent `Ran`, `Edited`, or `Explored` blocks
+
+Those are history. The state is determined by the current bottom prompt / working marker.
 
 Classify each worker into: `working`, `finished`, `blocked`, `idle`, `compacting`, `context_low`, `session_dead`.
 
@@ -572,12 +611,12 @@ Monitor all workers:
 
 ### TL Response Guide Reference
 
-Every message to TL must include this line at the top:
+Every message to TL must start with `[PM -> TL]` and include this line immediately after:
 
 > TL, please respond per your maintained guide at `{TL_WORKINGDIR}/.teamlead/_TEAMLEAD_GUIDE.md`.
 > If for any reason you decide to stop working, please read `{TL_WORKINGDIR}/.teamlead/_STOP_ROUTING_RULE.md` to confirm all stop-routing rules are applied correctly.
 
-This keeps TL anchored to their own written response rules, including the 3.6 decision proof-reading rule, dispatch structure requirements, and verdict discipline. Before sending the message, replace `{TL_WORKINGDIR}` with the `team_lead` role's `working_dir` from `config.json`; if that field is missing, stop and fix `config.json` instead of hardcoding a project path. Place these lines at the first line of every TL message so they are unmissable.
+This keeps TL anchored to their own written response rules, including the 3.6 decision proof-reading rule, dispatch structure requirements, and verdict discipline. Before sending the message, replace `{TL_WORKINGDIR}` with the `team_lead` role's `working_dir` from `config.json`; if that field is missing, stop and fix `config.json` instead of hardcoding a project path. Place these lines immediately after the `[PM -> TL]` prefix so they are unmissable.
 
 ### Rules This Tick
 
@@ -628,6 +667,8 @@ Override the old 3-tier escalation behavior for task, route, and architecture qu
 - Tier 3 escalation reports only when TL explicitly requests the owner's product-owner input.
 
 If Manager is tempted to write "awaiting the owner decision on X", ask TL about X first. If TL says "this needs the owner", then produce the Tier 3 report. Not before.
+
+Every worker-facing message must start with `[PM -> worker]`.
 
 #### 5. Standard Harness Discipline
 
