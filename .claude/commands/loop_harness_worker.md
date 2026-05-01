@@ -1,8 +1,12 @@
 # Loop Harness Worker
 
+## Command Isolation Rule
+
+Keep this command clean and isolated. Do not add project-specific phase names, stage names, version labels, release labels, proposal roots, roadmap details, or product-specific execution rules. Put those details in TL dispatches, plan docs, or manager-side status notes, not in this reusable command file.
+
 Active worker supervision with structured challenges — the more demanding cousin of `/sleep_to_monitor`. Where sleep-to-monitor asks "is the worker finished?", this command asks "is the worker doing the RIGHT work, the RIGHT way, with EVIDENCE, per the plan — and if something fails, have they collected enough diagnostics for TL to adjudicate instead of giving up?"
 
-Use this when the task is architectural or multi-stage, when the worker has historically drifted from plan docs, or when evidence discipline matters. PM does not own final verification; PM keeps workers collecting useful proof and routes that proof to TL for verification/adjudication.
+Use this when the task is architectural or multi-step, when the worker has historically drifted from plan docs, or when evidence discipline matters. PM does not own final verification; PM keeps workers collecting useful proof and routes that proof to TL for verification/adjudication.
 
 ## How to run (critical — this command is tick-based, not a long loop)
 
@@ -22,7 +26,7 @@ To stop supervision: `CronDelete <job-id>` (or delete via the `loop` skill's man
 
 Use `/loop_harness_worker` when:
 - A non-trivial task is in flight and the plan is architectural (not a one-liner)
-- Multi-stage or multi-iteration work (spans more than one sub-task)
+- Multi-step or multi-iteration work (spans more than one sub-task)
 - The worker has a history of drifting from the plan
 - Evidence discipline matters — you need to enforce "exhaust debug tools before giving up" on human-path failures and submit the evidence package to TL
 - You want active supervision, not just passive monitoring
@@ -39,7 +43,7 @@ Skip this command (use `/sleep_to_monitor` instead) when:
   - `light`: challenge only at task boundaries (when worker reports done or proposes a new approach)
   - `medium`: challenge at task boundaries + probabilistically every ~3rd tick
   - `strict`: challenge every tick
-- `focus_area` — narrow the challenge to a specific workstream (e.g. `"Stage B.2"`, `"composer cutover"`). If omitted, challenge against the whole plan.
+- `focus_area` — narrow the challenge to a specific workstream or deliverable. If omitted, challenge against the whole plan.
 
 ## Active worker resolution
 
@@ -47,9 +51,7 @@ Before starting the tick:
 
 - Read `config.json`
 - If it has a `workers` array, resolve the active worker from the current bot profile / `FIRST_PROMPT`
-  - `.env1` maps to `Oysterun`
-  - `.env2` maps to `OysterunDeploy`
-  - `.env3` maps to `OysterunFast`
+  - `.env1`, `.env2`, `.env3`, and similar local profiles should identify workers by configured `name` or `session`
 - If no explicit match is available, use `workers[0]`
 - If only a legacy `worker` object exists, use that
 
@@ -88,7 +90,7 @@ tmux capture-pane -t <session> -p -S -20
 
 **What "message not sent" means:**
 
-A message is **not sent / not submitted** when the capture shows the message text sitting at the worker input prompt (for example after the Codex `›` prompt), but there is no sign that the agent started processing it. This includes cases like W3 / `OysterunFast` where the long assignment text is visible in the prompt, the model/status line is visible, and there is no `Working`, tool call, plan update, response text, or other post-submit activity after the message.
+A message is **not sent / not submitted** when the capture shows the message text sitting at the worker input prompt (for example after the Codex `›` prompt), but there is no sign that the agent started processing it. This includes cases where a long assignment text is visible in the prompt, the model/status line is visible, and there is no `Working`, tool call, plan update, response text, or other post-submit activity after the message.
 
 Do NOT count any of these as sent:
 
@@ -151,19 +153,11 @@ Each tick re-reads these (no cross-tick state). Keep the reads small; this is a 
 5. Plan doc (from `plan_doc` input, TL dispatch, or safe auto-detection). Grep for keywords relevant to the challenge being issued this tick — don't re-read the whole doc every tick
 6. Only if relevant to the current worker activity: recent prompts/ artifacts (handover reports, verification reports, deferral notes)
 
-If the plan doc cannot be located, or auto-detection might select an old V5/V6-adjacent plan that conflicts with TL's active scope, ask TL for the authoritative plan/proposal path and stop this tick. Do not guess from newest filename alone.
-
-For current Oysterun V6 work, the controlling proposal root is expected to be:
-
-```text
-{TL_WORKINGDIR}/prompts/requirements_proposals/Oysterun-Refactor_V6/
-```
-
-If TL dispatch names a different current proposal root, use TL's path and mention the discrepancy in the tick summary.
+If the plan doc cannot be located, or auto-detection might select an old plan that conflicts with TL's active scope, ask TL for the authoritative plan/proposal path and stop this tick. Do not guess from newest filename alone.
 
 ## Procedure (one tick)
 
-Every tick MUST perform the same four phases in this exact order:
+Every tick MUST perform the same four steps in this exact order:
 
 1. **Read TL response** — use the Oysterun `read_response` command for TL first.
    - Full path: `~/Projects/TmuxAgentManager/.claude/commands/skills/Oysterun/read_response.md`
@@ -176,9 +170,9 @@ Every tick MUST perform the same four phases in this exact order:
    - Full path: `~/Projects/TmuxAgentManager/.claude/commands/send_tmux.md`
    - Repo-relative path: `.claude/commands/send_tmux.md`
 
-Do these phases even if one target has no new action. A phase with no action should record `no-op` and why.
+Do these steps even if one target has no new action. A step with no action should record `no-op` and why.
 
-If the tick has enough context to send a useful TL update or worker instruction, send it in the same loop run. Do not defer just because the tick already performed another phase. If required information is not ready, collect and summarize the information available, record what is missing, and carry that packet into the next round instead of guessing.
+If the tick has enough context to send a useful TL update or worker instruction, send it in the same loop run. Do not defer just because the tick already performed another step. If required information is not ready, collect and summarize the information available, record what is missing, and carry that packet into the next round instead of guessing.
 
 ### Step 0: Read TL response first
 
@@ -263,7 +257,7 @@ Use at most one message per worker per tick unless TL explicitly asked for multi
 ### Step 4: Exit cleanly
 
 - Record what was observed and what was sent in a brief user-facing summary.
-- The summary must list the four phases in order: `TL read_response`, `worker progress checks`, `TL send_cmd`, `worker sends`.
+- The summary must list the four steps in order: `TL read_response`, `worker progress checks`, `TL send_cmd`, `worker sends`.
 - Flag any escalation triggers for TL (see "Escalation" below).
 - If the tick surfaced anything that should outlive this tick — a blocker, a TL-requested owner decision, or a follow-up reminder — append an entry to `prompts/_REMINDER.md` in this repo (see "Reminder ledger" below).
 - Exit. `/loop` will re-fire in 5 minutes.
@@ -281,7 +275,7 @@ When the worker claims a sub-task done or proposes an approach:
 
 When the worker is refactoring against a reference codebase (e.g. Telegram-iOS, another upstream):
 - "What did the real upstream source do for this? Cite the exact file:line from the local reference checkout."
-- "Are you synthesizing a simplified version of upstream behavior? If yes — stop. Copy-first is the rule unless the plan explicitly whitelists a simplification."
+- "Are you synthesizing a simplified variant of upstream behavior? If yes — stop. Copy-first is the rule unless the plan explicitly whitelists a simplification."
 - "Does upstream have a runtime feature (gesture, event, animation, ordering) that your implementation silently drops? If unsure, don't delete it; let it render default-empty."
 
 ### Challenge 3 — Tool and skill awareness
@@ -307,7 +301,7 @@ When the worker reports "done" or "green":
 
 From the plan doc's lessons section, spot-check before each major worker action:
 - Is the worker about to create a custom-owned wrapper around a reference-provided storage primitive?
-- Is the worker about to declare a stage done while reconciliation bugs are open?
+- Is the worker about to declare a deliverable done while reconciliation bugs are open?
 - Is the worker about to build a stub that pretends to be a real upstream module?
 - Is the worker about to skip required evidence collection or omit a verification gap from the TL packet?
 
@@ -385,7 +379,7 @@ Route this escalation to TL first. The owner only receives a decision request if
 
 ## Harness philosophy — keep the worker moving
 
-**Default: harness the worker through ALL stages of the plan. Do NOT stop the loop until either (a) every stage is genuinely complete with TL-accepted evidence, or (b) the user explicitly stops.** A multi-stage refactor is dozens of hours of work — the harness only earns its keep by sustaining the worker through all of it without constant user babysitting. Heartbeat-only ticks where the worker holds idle and the manager just pings for status are NOT the harness — they are failure.
+**Default: harness the worker through ALL scoped work in the plan. Do NOT stop the loop until either (a) every required deliverable is genuinely complete with TL-accepted evidence, or (b) the user explicitly stops.** Multi-step work can take many hours — the harness only earns its keep by sustaining the worker through all of it without constant user babysitting. Heartbeat-only ticks where the worker holds idle and the manager just pings for status are NOT the harness — they are failure.
 
 ### Three-tier decision protocol
 
@@ -395,8 +389,8 @@ When a tick surfaces something that *would normally need approval*, classify int
 
 - The proposed action is clearly aligned with the agreed plan / direction doc / spirit report.
 - The "approval" is nominal — there's only one reasonable answer per the plan.
-- Examples: pushing the next deliverable in a defined Phase, applying a whitelist entry that follows the established pattern, picking between two equivalent plan-compliant options.
-- → If this is within TL's existing dispatch, push the worker forward and write a `_REMINDER.md` entry noting the auto-decision and why. If it crosses into a new task/phase, ask TL first.
+- Examples: pushing the next deliverable in a defined task sequence, applying a whitelist entry that follows the established pattern, picking between two equivalent plan-compliant options.
+- → If this is within TL's existing dispatch, push the worker forward and write a `_REMINDER.md` entry noting the auto-decision and why. If it crosses into a new task group, ask TL first.
 
 **Tier 2 — Spirit-guided decision (decide + reminder)**
 
@@ -425,7 +419,7 @@ the owner does NOT read code. He makes business/architecture decisions. The repo
 - Describe Pros/Cons in business/architectural logic terms, not code locations
 - Include "what-if" scenarios: "如果選 A 會怎樣？選簡單方案有什麼副作用？未來會解決嗎？"
 - Explain "選這個不代表什麼" to prevent misunderstandings
-- Reference: `~/Projects/TmuxAgentManager/prompts/20260417_3_escalation_phase2_downloader_boundary_layman_version.md` is the gold standard
+- Reference a local layman-friendly escalation-report template if one exists; otherwise follow the required sections below.
 
 **Worker investigation is MANDATORY:**
 
@@ -466,26 +460,20 @@ Before writing ANY escalation report, the manager MUST:
 
 Do NOT stop the cron. Keep firing until:
 
-- Every stage in the plan is genuinely done (every deliverable + TL-accepted evidence complete), AND a final `_REMINDER.md` entry summarizes "all work done, evidence cited, recommend stop", OR
+- Every scoped deliverable in the plan is genuinely done (every deliverable + TL-accepted evidence complete), AND a final `_REMINDER.md` entry summarizes "all work done, evidence cited, recommend stop", OR
 - The user explicitly says stop.
 
 ### Practical examples
 
-- Worker delivered Phase X deliverable A. TL's dispatch defines deliverable B as next. → Tier 1: push deliverable B immediately. Write reminder noting the auto-push.
-- Worker delivered Phase X completely. Ask TL whether Phase X+1 is authorized by the proposal/guide. If TL dispatches it, push the worker; if TL says a real gate is pending, hold and report the active gate.
+- Worker delivered one planned deliverable. TL's dispatch defines another deliverable as next. → Tier 1: push the next deliverable immediately. Write reminder noting the auto-push.
+- Worker delivered the current task group completely. Ask TL whether the next task group is authorized by the proposal/guide. If TL dispatches it, push the worker; if TL says a real gate is pending, hold and report the active gate.
 - Worker hits a small ambiguity ("should I bisect attribute foo or bar first?"). Spirit report says "stable chat flow first" → bisect the one that affects chat flow first. → Tier 2: decide + push + reminder.
 - Worker hits a real architectural fork ("AccountContext: real protocol implementation vs facade pattern, different long-term cost"). → Tier 3: ask TL with named options. Owner input happens only if TL requests it.
 
 ### What NOT to do
 
-- Do NOT pause the loop because "the owner might want to review first" — ask TL for the next directive. For current V6, Owner review/recording/manual-lane items are reminders, not blockers; Manager/PM should continue routing TL-approved work while repeating the reminder in Owner-facing updates.
-
-Current V6 start/execution rule:
-
-- TL owns V6 base replacement, TL transfer, V6 Phase 1 worktree creation, product-code work inside a TL-reviewed phase plan, and simulator/xcodebuild/service runs needed by that plan.
-- Owner recording review and Owner-manual lane items are non-blocking reminders that must appear in Owner-facing updates until Owner confirms completion or says to stop reminding.
-- Owner blocking remains only for final repo-main promotion, release / owner-facing product install, or a genuine product-owner decision that TL cannot decide from proposal / standards / evidence.
-- Do NOT recommend loop stop after each Phase completion — the harness's job is to drive every Phase, not just one.
+- Do NOT pause the loop because "the owner might want to review first" — ask TL for the next directive. Owner review items are reminders, not blockers, unless TL explicitly marks them as blocking product-owner decisions.
+- Do NOT recommend loop stop after each task group completion — the harness's job is to drive the whole scoped plan, not just one deliverable.
 
 ## Reminder ledger (`prompts/_REMINDER.md`)
 
@@ -515,9 +503,9 @@ When to write:
 
 ```
 ## 2026-04-17 14:32 — 阻塞中
-相關文件：/Users/.../prompts/20260417_2_escalation_phase2_downloader_boundary.md
-問題：TL 明確要求 owner 針對 Phase 2 downloader boundary 做 product-owner 決策，所有 worker 閒置中。三個選項（A: 留在 HostAPIClient / B: 移到 Bridge / C: 直接走 Postbox）需要 owner 拍板。
-建議下一步：請閱讀報告後回覆 A/B/C。Manager 推薦 Option A（最小擾動、符合 phase 順序）。
+相關文件：/Users/.../prompts/<date>_escalation_<topic>.md
+問題：TL 明確要求 owner 針對一個產品/架構問題做 product-owner 決策，所有 worker 閒置中。幾個選項需要 owner 拍板。
+建議下一步：請閱讀報告後回覆 A/B/C。Manager 推薦 Option A（最小擾動、符合既定順序）。
 ```
 
 Do NOT write to `_REMINDER.md` for routine tick events (worker still working, normal commits landing, scheduled `/compact`s). Reserve it for things the user genuinely needs to see when they review later — quality over quantity.
