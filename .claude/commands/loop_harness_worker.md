@@ -19,6 +19,26 @@ Hard rules:
 - Owner-facing output from this command must be a status relay, deliverable notification, or TL-requested owner-decision reminder. It must not contain open-ended prompts such as "if you want, I can...", "should I...", "do you want me to...", or "what should I do next?"
 - A Tier 3 owner escalation is allowed only after TL explicitly requests product-owner input and PM has prepared the required escalation report. Even then, the owner question must be tied to TL's named options, not routine task routing.
 
+## Recent Failure Guards
+
+These guardrails address repeated loop failures by lighter PM models. Apply them before ordinary reasoning.
+They are pattern rules, not task-specific rules. Do not key them to a phase ID, task label, route name, or one historical incident.
+
+1. **No raw tmux send to TL.**
+   - PM must never send TL messages with raw `tmux send-keys -t <tl_session> ...` commands, including sessions such as `Oysterun`, or any other hand-written tmux command.
+   - Every TL send must go through the Oysterun session-control route and `.claude/commands/skills/Oysterun/send_cmd.md`.
+   - Before sending to TL, run `.claude/commands/skills/Oysterun/read_status.md`.
+   - If PM used raw tmux for TL, classify the tick as command-protocol failure and correct it next tick; do not claim "TL updated" unless the session-control send path confirms delivery.
+
+2. **No "no-change" when a worker completed anything.**
+   - If any worker pane contains a newly visible or not-yet-reported completed answer, output path, report path, evidence root, validation summary, final sentinel, or clean prompt after a prior blocked/working state, this is not no-change.
+   - PM must report the deliverable or state transition to TL.
+   - A capture with a completion phrase, `Output: /path/...`, `Report: /path/...`, `Evidence root: /path/...`, `READY_TASK...`, and a clean prompt must be reported as completion, not "no new worker activity".
+
+3. **No "all idle" summary without reconciliation.**
+   - Before saying all workers are idle, PM must state whether each idle worker is parked by TL, waiting for a TL decision, waiting for a clean-prompt dispatch, or has a completed deliverable that must be reported.
+   - "Idle at clean prompt" can be a trigger to dispatch TL-routed work; it is not automatically a no-op.
+
 Active worker supervision with structured challenges — the more demanding cousin of `/sleep_to_monitor`. Where sleep-to-monitor asks "is the worker finished?", this command asks "is the worker doing the RIGHT work, the RIGHT way, with EVIDENCE, per the plan — and if something fails, have they collected enough diagnostics for TL to adjudicate instead of giving up?"
 
 Use this when the task is architectural or multi-step, when the worker has historically drifted from plan docs, or when evidence discipline matters. PM does not own final verification; PM keeps workers collecting useful proof and routes that proof to TL for verification/adjudication.
@@ -460,7 +480,42 @@ Include:
 - worker messages you plan to send in this same tick, if already clear
 - information that is not ready and will be collected next round
 
-If there is no new TL-directed information, record `TL send_cmd: no-op` in the tick summary.
+If a worker pane shows completion text, the TL packet must quote/summarize the completion instead of sending no-change. Minimum deliverable packet:
+
+- worker slot/session
+- task name as shown by the worker, if visible
+- output/report/evidence paths
+- validation summary
+- boundary confirmation
+- worker final recommendation or sentinel, if present
+- current pane state after completion
+
+Completion signal patterns that require a TL deliverable packet:
+
+- `<task-or-slice> is complete.`
+- `<task-or-slice> done.`
+- `<task-or-slice> finished.`
+- `Output: /path/to/report_or_bundle`
+- `Report: /path/to/report`
+- `Evidence root: /path/to/evidence_root`
+- `Validation performed:`
+- `Verification performed:`
+- `Exact recommendation: ...`
+- `Final recommendation: ...`
+- `READY_TASK...`
+- `Worked for ...` followed by a clean prompt
+
+These are generic patterns. Apply them to any worker task, route, phase, project, or report name. Do not classify those examples as `all idle`, `state unchanged`, or `no new worker activity`. A worker can be idle now and still have a newly completed deliverable that TL must see.
+
+No-op is allowed only when all of the following are true:
+
+- no worker has a newly visible or not-yet-reported deliverable
+- no worker changed state since the previous tick
+- no TL conditional trigger has become true
+- no completed transcript or `READY_TASK...` sentinel is waiting to be reported
+- no pending worker dispatch exists
+
+If there is no new TL-directed information after those checks, record `TL send_cmd: no-op` in the tick summary.
 
 ### Step 3: Send commands to workers
 
