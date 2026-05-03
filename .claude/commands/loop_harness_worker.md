@@ -24,19 +24,19 @@ Hard rules:
 These guardrails address repeated loop failures by lighter PM models. Apply them before ordinary reasoning.
 They are pattern rules, not task-specific rules. Do not key them to a phase ID, task label, route name, or one historical incident.
 
-1. **No raw tmux send to TL.**
-   - PM must never send TL messages with raw `tmux send-keys -t <tl_session> ...` commands, including sessions such as `Oysterun`, or any other hand-written tmux command.
-   - Every TL send must go through the Oysterun session-control route and `.claude/commands/skills/Oysterun/send_cmd.md`.
-   - The only valid shell transport for a TL send is the `send_cmd.md` procedure: `python3 tool_scripts/oysterun_control.py send ...` after `read_status` says ready.
-   - If PM is about to run `tmux send-keys` for TL, PM must stop that action and run `send_cmd.md` instead.
-   - Before sending to TL, run `.claude/commands/skills/Oysterun/read_status.md`.
-   - If PM used raw tmux for TL, classify the tick as command-protocol failure and correct it next tick; do not claim "TL updated" unless the session-control send path confirms delivery.
+1. **Resolve TL vs worker target before judging protocol.**
+   - PM must read `config.json` before classifying any send or pane as TL or worker communication.
+   - `team.roles.team_lead` is the TL identity. When its `type` is `Oysterun`, the TL target is the configured Oysterun Host `session_name`, not a tmux session name.
+   - `workers[]` entries with `type=tmux` are worker tmux sessions. Sending to those sessions is worker communication and must be judged by the worker `/send_tmux` protocol, not by TL rules.
+   - Do not infer TL identity from names such as `Oysterun`, `TeamLead`, or any pane title. If a name is listed under `workers[]`, it is a worker for this command.
+   - If a target is not resolved by `team.roles.team_lead` or `workers[]`, classify it as routing ambiguity and ask TL/manager configuration for correction; do not guess.
+   - TL messages must use the resolved TL route. For `type=Oysterun`, that means `.claude/commands/skills/Oysterun/send_cmd.md` after `.claude/commands/skills/Oysterun/read_status.md` says ready.
 
 2. **No "no-change" when a worker completed anything.**
    - If any worker pane contains a newly visible or not-yet-reported completed answer, output path, report path, evidence root, validation summary, final sentinel, or clean prompt after a prior blocked/working state, this is not no-change.
    - PM must report the deliverable or state transition to TL.
    - A capture with a completion phrase, `Output: /path/...`, `Report: /path/...`, `Evidence root: /path/...`, `READY_TASK...`, and a clean prompt must be reported as completion, not "no new worker activity".
-   - A deliverable is "reported" only after a TL packet was successfully sent through Oysterun session-control and that packet contained the worker slot plus the deliverable path/report/evidence/sentinel. A raw tmux no-change update does not count. A PM sentence saying "sent TL a no-change update" does not count.
+   - A deliverable is "reported" only after a TL packet was successfully sent through the resolved TL route and that packet contained the worker slot plus the deliverable path/report/evidence/sentinel. A status typed into a worker tmux session, manager console, or unresolved target does not count as a TL report.
    - If a previous tick misclassified a visible completion as no-change, the next tick must send a correction deliverable packet before any ordinary no-change/status update.
 
 3. **No "all idle" summary without reconciliation.**
@@ -44,9 +44,9 @@ They are pattern rules, not task-specific rules. Do not key them to a phase ID, 
    - "Idle at clean prompt" can be a trigger to dispatch TL-routed work; it is not automatically a no-op.
 
 4. **Violation recovery beats ordinary loop output.**
-   - If this tick observes a command-protocol failure, unreported deliverable, stale no-change classification, or owner-provided pane evidence proving those failures, PM must not answer with the normal idle/no-change script.
+   - If this tick observes an unreported deliverable, stale no-change classification, unresolved target, or owner-provided pane evidence proving those failures, PM must not answer with the normal idle/no-change script.
    - First send or preserve a TL correction packet through `send_cmd.md`.
-   - The correction packet must state the violated rule, worker slot/session, completion signal, deliverable paths, recommendation/sentinel, and that the earlier raw/no-change update is invalid.
+   - The correction packet must state the violated rule, worker slot/session, completion signal, deliverable paths, recommendation/sentinel, and why the earlier no-change or misrouted update is invalid.
    - Only after the correction packet is delivered or explicitly deferred by `read_status` may PM give the owner a status summary.
 
 Active worker supervision with structured challenges — the more demanding cousin of `/sleep_to_monitor`. Where sleep-to-monitor asks "is the worker finished?", this command asks "is the worker doing the RIGHT work, the RIGHT way, with EVIDENCE, per the plan — and if something fails, have they collected enough diagnostics for TL to adjudicate instead of giving up?"
@@ -519,10 +519,10 @@ These are generic patterns. Apply them to any worker task, route, phase, project
 
 Reported/not-reported rule:
 
-- A deliverable is reported only when a TL packet was sent through `.claude/commands/skills/Oysterun/send_cmd.md` / Oysterun session-control and the packet included that worker's deliverable path/report/evidence/sentinel.
-- `tmux send-keys` to a TL pane is never a valid TL packet.
-- A raw tmux no-change update does not clear a visible completion signal.
-- If a visible completion signal was followed by a raw/no-change TL update in the same or previous tick, classify the next action as `correction_deliverable_packet_required`, not `no-op`.
+- A deliverable is reported only when a TL packet was sent through the resolved TL route and the packet included that worker's deliverable path/report/evidence/sentinel.
+- For `team.roles.team_lead.type = Oysterun`, the resolved TL route is `.claude/commands/skills/Oysterun/send_cmd.md` / Oysterun session-control.
+- A tmux message to a worker session, manager console, or unresolved target does not clear a visible completion signal.
+- If a visible completion signal was followed by a no-change update that did not go to the resolved TL route in the same or previous tick, classify the next action as `correction_deliverable_packet_required`, not `no-op`.
 - If unsure whether a deliverable was reported, treat it as not reported and include it in the next TL packet.
 
 No-op is allowed only when all of the following are true:
