@@ -65,6 +65,8 @@ Summarize:
 
 - the resolved target
 - the latest assistant/user rows that matter
-- whether the session appears idle, responding, or blocked from the transcript evidence
+- whether the transcript evidence contains a new formal response or only older/incomplete-looking context
 
 Do not treat `assistant (thinking)` rows as TL directives or as evidence that TL is still processing unless the owner explicitly requested `--include-internal`. A formal non-thinking assistant message overrides earlier thinking rows.
+
+Do not use transcript evidence alone to decide whether it is safe to send another message. Before sending to TL, run `/skills/Oysterun/read_status` and require `Ready to send: yes`.

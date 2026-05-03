@@ -11,12 +11,14 @@ Use this local skill when the owner wants the manager to talk to an Oysterun Hos
   - `.claude/commands/skills/Oysterun/list_session.md`
   - `.claude/commands/skills/Oysterun/send_cmd.md`
   - `.claude/commands/skills/Oysterun/read_response.md`
+  - `.claude/commands/skills/Oysterun/read_status.md`
 
 ## Supported actions
 
 - List live Oysterun sessions
 - Send a message to a live Oysterun session
 - Read recent transcript rows from a live Oysterun session
+- Read session delivery/outbox status to decide whether the session can safely receive a new message
 
 ## Team role rule
 
@@ -47,6 +49,24 @@ If the owner asks to "ask the team lead" or "get the next task from the team lea
 5. If it is unresolved, run `/skills/Oysterun/list_session`.
 6. Report that `config.json` must be fixed before routing work to TL; do not create or bind a replacement TL session by guesswork.
 7. Do not guess.
+
+## TL pre-send readiness gate
+
+Before sending any new message to the `team_lead` role through `/skills/Oysterun/send_cmd`, PM must run `/skills/Oysterun/read_status` for the same target.
+
+The TL session is considered idle/standby and safe to receive a new command only when all of these are true:
+
+- `Ready to send: yes`
+- `delivery.state = ready`
+- `queued_count = 0`
+- `active_message_id = null`
+- `active_message_state = null`
+- no queued message exists
+- no cancelable message exists
+
+If TL has an active message, a queued message, a cancelable message, or any non-ready delivery state, do not send the new command in this tick. Record that TL is not ready, keep the intended TL packet for the next tick, and check status again then.
+
+Do not infer TL readiness from transcript rows alone. Transcript rows can show previous `thinking`, `tool_call`, `tool_result`, or assistant messages, but `/session/snapshot` delivery/outbox state is the source of truth for active or queued work.
 
 ## Boundary
 

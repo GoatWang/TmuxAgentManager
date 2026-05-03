@@ -6,6 +6,19 @@ Keep this command clean and isolated. Do not add project-specific phase names, s
 
 Prefix every outbound message with `[PM -> TL]` or `[PM -> worker]` as appropriate.
 
+## Owner Question Ban
+
+PM must not ask the owner task-routing, next-step, phase, worker, verification, recovery, or "should I proceed?" questions.
+
+Hard rules:
+
+- If TL has already provided the next bounded task, PM must route that task through the TL/worker flow instead of asking the owner whether to take it.
+- If TL's instruction is ambiguous, stale, blocked, or missing, PM must ask TL through the Oysterun session-control route. Do not ask the owner to interpret TL's instruction.
+- If workers are idle, unavailable, blocked, or `pane_parse_uncertain`, PM must report that state to TL and ask TL for routing. Do not ask the owner what to do next.
+- If a worker report creates a task, route, verification, or evidence-classification decision, PM must ask TL. Do not ask the owner unless TL explicitly requests product-owner input.
+- Owner-facing output from this command must be a status relay, deliverable notification, or TL-requested owner-decision reminder. It must not contain open-ended prompts such as "if you want, I can...", "should I...", "do you want me to...", or "what should I do next?"
+- A Tier 3 owner escalation is allowed only after TL explicitly requests product-owner input and PM has prepared the required escalation report. Even then, the owner question must be tied to TL's named options, not routine task routing.
+
 Active worker supervision with structured challenges — the more demanding cousin of `/sleep_to_monitor`. Where sleep-to-monitor asks "is the worker finished?", this command asks "is the worker doing the RIGHT work, the RIGHT way, with EVIDENCE, per the plan — and if something fails, have they collected enough diagnostics for TL to adjudicate instead of giving up?"
 
 Use this when the task is architectural or multi-step, when the worker has historically drifted from plan docs, or when evidence discipline matters. PM does not own final verification; PM keeps workers collecting useful proof and routes that proof to TL for verification/adjudication.
@@ -68,17 +81,19 @@ From the resolved worker, read:
 
 This means the harness must resolve the target worker, verify the tmux session exists, clear stale input with `C-u`, send via the worker's configured `send_method`, and confirm receipt before treating the message as sent. Do not hand-roll a separate worker-message path, do not skip the receipt check, and do not count text sitting in a prompt as communication.
 
+The full command-doc path is mandatory: `~/Projects/TmuxAgentManager/.claude/commands/send_tmux.md`. Open and follow that file each tick before sending worker-facing text; do not rely on memory of the slash command behavior.
+
 If this tick targets W1/W2/W3 rather than only the active/default worker, apply the same `/send_tmux` protocol to that specific worker's resolved `session` and `send_method`; preserve the worker's original settings.
 
 ### Worker send receipt and recovery overlay
 
-When `/loop_harness_worker` sends a worker-facing message, it MUST apply this receipt overlay on top of `/send_tmux`. This is mandatory because a typed tmux input line is not the same as a submitted message.
+When `/loop_harness_worker` sends a worker-facing message, it MUST follow the receipt rules in `~/Projects/TmuxAgentManager/.claude/commands/send_tmux.md`, especially Step 5. This is mandatory because a typed tmux input line is not the same as a submitted message.
 
 **Send timing:**
 
 - For `send_method: two-line`, send the message text first, then wait 3 seconds, then send `C-m`.
 - For `send_method: enter`, send the message text first, then wait 3 seconds, then send `Enter`.
-- After the submit key, wait another 3 seconds and capture the last 20 lines to verify receipt.
+- After the submit key, wait 5 seconds and capture the last 30 joined lines to verify receipt.
 
 Example for `two-line`:
 
@@ -86,13 +101,29 @@ Example for `two-line`:
 tmux send-keys -t <session> "<message>"
 sleep 3
 tmux send-keys -t <session> C-m
-sleep 3
-tmux capture-pane -t <session> -p -S -20
+sleep 5
+tmux capture-pane -t <session> -p -J -S -30
 ```
+
+Use `-J` for receipt checks so long wrapped input lines are joined and a stuck prompt buffer is visible as one typed payload. If the first receipt capture is unclear, escalate to `-S -80` or `-S -100` before changing worker state.
 
 **What "message not sent" means:**
 
 A message is **not sent / not submitted** when the capture shows the message text sitting at the worker input prompt (for example after the Codex `›` prompt), but there is no sign that the agent started processing it. This includes cases where a long assignment text is visible in the prompt, the model/status line is visible, and there is no `Working`, tool call, plan update, response text, or other post-submit activity after the message.
+
+Treat this exact shape as `send_not_submitted_prompt_buffer`, not as `worker_running` and not as `unavailable`:
+
+```text
+› Task L: ...
+  ... long wrapped assignment text ...
+  ... cd /path && codex ...
+  ... READY_TASK...
+  ... more pasted command text ...
+```
+
+This means Codex is alive and the text is sitting in the TUI input buffer. It is a submission/receipt failure. It is not proof that the worker session is unavailable.
+
+Do not over-match old canary/task text in scrollback. If `READY_TASK...`, a task prompt, or any sent text appears in history but is followed by a worker response (for example `• READY_TASK...`, an answer, tool activity, or a fresh idle prompt), then it was submitted. Classify by the current bottom state instead. Visible history is not the prompt buffer.
 
 Do NOT count any of these as sent:
 
@@ -100,18 +131,72 @@ Do NOT count any of these as sent:
 - the message is concatenated with previous prompt text and no worker response begins
 - the pane is idle with the model/status line visible and no new tool/activity markers
 - the capture only proves that keys were typed, not that the submit key was accepted
+- a shell command, `codex resume`, `READY_TASK`, or canary text is visible after the `›` prompt as typed text rather than as executed output
 
 **Recovery for "message not sent":**
 
-If the message is visible in the prompt but not executing, do not retype the message and do not clear it with `C-u`. Submit the already-typed input one more time:
+If the message is visible in the prompt but not executing, do not retype the message and do not clear it with `C-u`. Follow `/send_tmux` Step 5 bounded submit recovery exactly:
 
-- For `send_method: two-line`, send exactly one extra `C-m`.
-- For `send_method: enter`, send exactly one extra `Enter`.
-- Sleep 10 seconds, then capture the last 30 lines.
-- If the worker now shows `Working`, tool activity, a plan update, or response text after the message, mark receipt confirmed.
-- If the message is still sitting in the prompt after the one extra submit key, stop retrying blindly. Classify the send as failed, record `worker sends: failed_not_submitted`, and diagnose pane/session state before sending anything else.
+- Send the configured submit key one additional time, then `sleep 5` and capture.
+- If still unsent, send the alternate submit key once (`C-m` vs `Enter`), then `sleep 5` and capture.
+- If still unsent, send `Escape` once only to exit a possible stuck TUI mode, then `sleep 2` and capture `-J -S -50`.
+- If the worker now shows `Working`, tool activity, a plan update, response text, or a fresh idle prompt after the message, classify by that current bottom state and continue.
+- If the message is still sitting in the current prompt after this bounded recovery, classify the tick as `pane_parse_uncertain` with the bottom prompt excerpt and ask TL for recovery direction. Do not keep pressing submit keys blindly.
+
+Do not use `Escape` as an interrupt for active work. It is only allowed in this receipt-recovery path when the message has not started executing.
 
 Only use `C-u` before a fresh new message. Once the intended message is already visible in the prompt, `C-u` would erase the unsent payload and hide the failure instead of fixing it.
+
+Do not mark a worker process-dead `unavailable` on the first sighting while `send_not_submitted_prompt_buffer` is visible. First sighting means the session is alive but the send/submit transport failed. Process-dead `unavailable` requires one of these stronger facts:
+
+- `tmux has-session -t <session>` fails
+- the pane is a shell prompt and Codex cannot be started or resumed after the documented recovery command is actually submitted
+- a canary or recovery command was submitted and receipt-confirmed, then the worker failed to respond or crashed
+
+If the pane still contains unsent text, the next action is submit/recover that input, not fresh-launch, kill, or unavailable reporting.
+
+**Repeated apparent unsent-buffer self-audit:**
+
+If the same worker appears to remain in `send_not_submitted_prompt_buffer` for two consecutive loop ticks, first assume PM may be misreading scrollback. The goal is to keep workers moving, not to stop routing work because the manager misclassified a pane.
+
+Before reporting a worker as unavailable or stuck, PM must perform a self-audit:
+
+- Capture deeper history with `tmux capture-pane -t <session> -p -J -S -120`.
+- Classify only the current bottom prompt block, not old history above it.
+- If `READY_TASK...`, a task prompt, or any sent text is followed by `• READY_TASK...`, an answer, tool activity, `Working`, or a fresh idle prompt, the text was submitted. Reclassify the worker as `working`, `idle`, or `finished` according to the current bottom state and continue routing normally.
+- If the current bottom prompt truly contains unsent text with no worker response after it, use `/send_tmux` Step 5 bounded submit recovery, then continue from the resulting state.
+- If PM still cannot tell after the deeper capture and bounded recovery, classify the tick as `pane_parse_uncertain`, send TL the exact evidence, and ask TL for recovery direction. Do not call the worker stuck and do not suppress future valid TL-routed work merely because old canary text is visible.
+
+Because this command is tick-based, PM may preserve cross-tick evidence to detect PM parsing mistakes. Use manager-local scratch state, not worker project files:
+
+- Read `prompts/_WORKER_PANE_PARSE_STATE.md` if it exists.
+- When a worker is classified as `send_not_submitted_prompt_buffer` or `pane_parse_uncertain`, append or update a short entry with timestamp, worker/session, state, whether submit recovery was already tried, and a 1-3 line bottom-prompt excerpt.
+- On the next tick, if the same worker/session shows the same apparent state, run the self-audit above before taking any routing decision.
+- Do not write this routine parse state to `_REMINDER.md` unless TL asks for owner-visible escalation.
+
+**`pane_parse_uncertain` escalation packet:**
+
+Treat `pane_parse_uncertain` as a careful TL-help request, not as a worker failure. PM must ask TL for help through the Oysterun session-control route and include enough context for TL to either give PM a recovery instruction or directly inspect/debug the tmux pane.
+
+The escalation to TL must include:
+
+- worker slot and tmux session name, for example `W5 / <session>`
+- working directory or launch directory if known
+- the intended worker message/task that PM was trying to send
+- exact tmux commands PM ran for inspection and recovery, including `tmux display-message`, `tmux capture-pane`, submit-key retry, alternate submit-key retry, and whether `Escape` was used
+- exact pane metadata from `tmux display-message -p -t <session> 'cmd=#{pane_current_command} dead=#{pane_dead} in_mode=#{pane_in_mode} alt=#{alternate_on} cursor=#{cursor_x},#{cursor_y} size=#{pane_width}x#{pane_height}'`
+- bottom pane text from the latest `tmux capture-pane -t <session> -p -J -S -30`
+- deeper pane text from `tmux capture-pane -t <session> -p -J -S -120` if the bottom state is still ambiguous
+- post-recovery capture snippets after each submit/alternate/Escape attempt
+- whether cross-tick scratch state already recorded the same apparent prompt buffer
+- the way TL can inspect it directly, for example:
+  ```bash
+  tmux display-message -p -t <session> 'cmd=#{pane_current_command} dead=#{pane_dead} in_mode=#{pane_in_mode} alt=#{alternate_on} cursor=#{cursor_x},#{cursor_y} size=#{pane_width}x#{pane_height}'
+  tmux capture-pane -t <session> -p -J -S -120
+  tmux attach -t <session>
+  ```
+
+Ask TL explicitly to determine the root cause of the pane parsing / submit transport uncertainty and to provide PM a concrete next action. TL may debug the tmux pane directly, but PM remains the channel that communicates with workers. PM must not bypass TL by asking the owner, must not declare the worker unavailable from `pane_parse_uncertain` alone, and must not keep pressing keys blindly after the bounded recovery.
 
 **TeamLead communication MUST use the Oysterun session-control skill.** Every TL interaction — asking for the next task, reporting deliverables, escalating a decision, or reading TL's response — MUST follow `~/Projects/TmuxAgentManager/.claude/skills/oysterun_session_control.md`.
 
@@ -141,7 +226,7 @@ Use the skill doc first for routing rules, then the specific Oysterun command do
 
 ## Required reads per tick (manager side)
 
-Each tick re-reads these (no cross-tick state). Keep the reads small; this is a 5-minute cadence, not unlimited budget:
+Each tick re-reads these. Keep the reads small; this is a 5-minute cadence, not unlimited budget:
 
 1. `config.json` — resolve the active worker for this tick
 2. Worker's agent configuration (only if TL asks for delivery-path context, or if a worker blocker requires evidence about available instructions; PM does not override TL's dev process):
@@ -153,7 +238,8 @@ Each tick re-reads these (no cross-tick state). Keep the reads small; this is a 
    - `<working_dir>/.claude/skills/` — list the skills the worker has
 4. Worker cheat sheet at `worker_cheatsheets/<worker_name>_cheatsheet.md` — refresh via `/read_workers_agent_settings` only if missing
 5. Plan doc (from `plan_doc` input, TL dispatch, or safe auto-detection). Grep for keywords relevant to the challenge being issued this tick — don't re-read the whole doc every tick
-6. Only if relevant to the current worker activity: recent prompts/ artifacts (handover reports, verification reports, deferral notes)
+6. `prompts/_WORKER_PANE_PARSE_STATE.md` if it exists — only to avoid repeated PM misclassification of visible scrollback as current prompt state
+7. Only if relevant to the current worker activity: recent prompts/ artifacts (handover reports, verification reports, deferral notes)
 
 If the plan doc cannot be located, or auto-detection might select an old plan that conflicts with TL's active scope, ask TL for the authoritative plan/proposal path and stop this tick. Do not guess from newest filename alone.
 
@@ -213,24 +299,89 @@ Use this deterministic classifier before reasoning about the worker state. This 
 
 Important rule: `cmd=node dead=0` does **not** mean the worker is working. Codex runs as a long-lived `node` process while idle. Treat `cmd=node dead=0` only as "the Codex process is alive".
 
+**Completed-transcript bottom-state rule:**
+
+Do not treat a completed worker transcript as active work just because it is still visible at the bottom of tmux. A worker can be finished/idle even when the latest visible lines are the final answer rather than the prompt.
+
+This rule must be version-tolerant. Do not depend on one Codex UI string, model label, separator style, or exact sentinel name. Classify by current-state invariants:
+
+- current input buffer exists and has not been submitted -> `send_not_submitted_prompt_buffer`
+- active generation/tool execution is still progressing -> `worker_running`
+- a completed answer/deliverable is stable and no active marker follows it -> `finished` / `idle`
+- a clean prompt is visible with no unsent payload -> `worker_idle_prompt_visible`
+- auth/session/setup prompt or shell prompt is visible -> classify that blocker directly, not as working
+
+Classify as `worker_idle_prompt_visible` / `finished` when the current bottom block contains a completed-task shape such as:
+
+```text
+• Completed ...
+
+  Output:
+  /path/to/report.md
+
+  Validation performed:
+  ...
+
+  Boundary confirmed: ...
+
+  READY_TASK_<id>
+
+─ Worked for 1m 54s ─
+```
+
+This shape means the visible text is the last completed response, not ongoing work, when all are true:
+
+- the bottom block includes an explicit completion marker such as `Completed`, `READY_TASK...`, `done`, `finished`, `Output:`, or a final deliverable path
+- the block is followed by a Codex completion/status separator such as `Worked for ...`, or it remains unchanged after a short recapture
+- there is no later `Working`, unfinished tool call, streaming command, mid-sentence answer, prompt-buffer assignment text after `›`, or explicit question asking for input
+
+If the prompt is not visible but the completed-transcript shape is visible, run one short confirmation capture before classifying:
+
+```bash
+sleep 5
+tmux capture-pane -t <session> -p -J -S -40
+```
+
+If the bottom completed block is unchanged and no active marker appears, classify the worker as `finished` / `idle` and include the deliverable in the TL packet. Do not keep reporting `working` across ticks from the same completed transcript.
+
+General completed-answer signals include any stable combination of:
+
+- final deliverable path, output path, report path, artifact root, or evidence root
+- explicit completion wording such as `completed`, `done`, `finished`, `ready`, `delivered`, `output`, `validation`, `boundary`, `summary`, or an equivalent localized phrase
+- test/validation/hygiene summary followed by no further streaming activity
+- final sentinel or canary reply, regardless of exact spelling
+- elapsed-time/status separator, regardless of exact visual style
+
+These signals are examples, not required exact strings. If they are stable and no active marker follows them, they describe completed history. They do not make the worker `working`.
+
 Classify the pane using the bottom of `tmux capture-pane -p -J -S -30`:
 
-1. `worker_idle_prompt_visible` / `finished`
+1. `send_not_submitted_prompt_buffer`
+   - The bottom of the capture shows the Codex input prompt `›` followed by task text, shell commands, `codex resume`, canary text such as `READY_TASK`, or other assignment content.
+   - There is no `Working`, tool call, answer text, or plan update after that text.
+   - First sighting means the message is typed but not submitted. The session is alive, but the send transport failed.
+   - Apply the `/send_tmux` Step 5 bounded submit recovery, unless TL told PM not to retry.
+   - If this appears for a second consecutive tick, run the repeated apparent unsent-buffer self-audit above before reporting the state. Do not stop routing from this classification alone.
+2. `worker_idle_prompt_visible` / `finished`
    - The bottom of the capture shows a Codex prompt such as:
      ```text
      › Explain this codebase
 
        gpt-5.5 xhigh · ~/Projects/...
-     ```
+   ```
    - This means the worker is idle and ready for the next instruction.
    - A summary immediately above the prompt is the worker's last completed response, not active work.
-2. `worker_running`
+   - A completed transcript ending in `READY_TASK...` and `Worked for ...` is also finished/idle even if the input prompt is not captured in the small slice.
+   - If TL has already routed a worker-facing task for this worker, `worker_idle_prompt_visible` must not persist across the next tick as a no-op. PM must send the pending task through `/send_tmux`.
+   - If the idle prompt contains stale, wrong, or corrupted typed text that PM does not intend to submit, send `Escape` once to remove that prompt buffer, capture again, then send the correct TL-routed task through `/send_tmux`.
+   - If PM cannot tell whether the visible prompt text is only the Codex placeholder or a real unsent payload, classify as `pane_parse_uncertain` and ask TL with the escalation packet instead of leaving the worker idle.
+3. `worker_running`
    - No idle prompt is visible, and the bottom shows active generation or tool activity such as `Working`, a command still streaming, an unfinished answer, or a tool section that has not returned to the prompt.
-3. `ambiguous`
+4. `ambiguous`
    - The capture ends mid-sentence, mid-command, or before the status line/prompt can be seen.
    - Escalate capture depth to `tmux capture-pane -t <session> -p -J -S -100`.
    - If still ambiguous, wait one tick and compare whether the bottom lines changed. Do not report "still active" from metadata alone.
-4. `shell_prompt`
+5. `shell_prompt`
    - A shell prompt is visible instead of the Codex prompt. Follow session recovery rules; do not treat it as a completed worker answer.
 
 Never classify a worker as `working` solely because:
@@ -239,10 +390,12 @@ Never classify a worker as `working` solely because:
 - metadata says `dead=0`
 - the latest visible summary says files were updated
 - the capture includes recent `Ran`, `Edited`, or `Explored` blocks
+- the capture shows a stable completed answer with `Output:`, validation bullets, `READY_TASK...`, or `Worked for ...`
+- the pane contains a long task prompt after `›`; that is an unsent input buffer until post-submit activity appears
 
 Those are history. The state is determined by the current bottom prompt / working marker.
 
-Classify each worker into: `working`, `finished`, `blocked`, `idle`, `compacting`, `context_low`, `session_dead`.
+Classify each worker into: `working`, `finished`, `blocked`, `idle`, `compacting`, `context_low`, `session_dead`, `send_not_submitted`, `pane_parse_uncertain`.
 
 For each worker, collect a compact status packet:
 
@@ -254,9 +407,48 @@ For each worker, collect a compact status packet:
 - whether TL has already supplied a next directive
 - whether a worker message is ready for this tick or must wait for more info
 
+### TL directive reconciliation rule
+
+After reading TL's latest directive and checking all workers, PM must reconcile the directive against the current pane state before reporting to TL or the owner.
+
+For each worker, record:
+
+- TL expected state or instruction, for example `continue task`, `park`, `standby`, `dispatch when clean prompt`, `do not resume stale task`, `report when delivered`
+- current observed pane state
+- whether the observed state satisfies, contradicts, or triggers the TL instruction
+- resulting action: report deliverable, dispatch ready task, keep parked, ask TL, or classify blocker
+
+Do not send a "no-change" TL update if any of these happened:
+
+- a worker moved from working to completed/idle
+- a worker delivered a path, report, evidence root, or final sentinel
+- a worker moved from auth/session blocked to clean prompt
+- a TL conditional became true, such as "when clean prompt, dispatch X"
+- a worker that TL said should continue now has a completed transcript
+- a worker is idle while TL has already supplied a worker-facing next task
+
+In those cases PM must report the transition and either dispatch the TL-routed task in the same tick or ask TL for the next routing decision. A stale instruction like "continue task X" is not current truth after the pane shows task X completed; the current truth is "task X delivered and worker is idle".
+
 ### Step 2: Send consolidated packet to TL
 
 After checking all workers, send TL one consolidated update through the Oysterun `send_cmd` command when there is anything TL should know or decide.
+
+Before sending, run the Oysterun `read_status` command for the same TL target:
+
+- Full path: `~/Projects/TmuxAgentManager/.claude/commands/skills/Oysterun/read_status.md`
+- Repo-relative path: `.claude/commands/skills/Oysterun/read_status.md`
+
+Only send the TL packet in this tick if TL is idle/standby:
+
+- `Ready to send: yes`
+- `delivery.state = ready`
+- `queued_count = 0`
+- `active_message_id = null`
+- `active_message_state = null`
+- no queued message exists
+- no cancelable message exists
+
+If TL is still responding, tool-calling, thinking, has an active message, has a queued/cancelable message, or the status check is not clearly ready, do not send another TL command in this tick. Record `TL send_cmd: deferred - TL not ready` with the status fields, preserve the intended TL packet for the next tick, and check again then.
 
 Include:
 
@@ -273,6 +465,8 @@ If there is no new TL-directed information, record `TL send_cmd: no-op` in the t
 ### Step 3: Send commands to workers
 
 After the TL packet is sent, send worker-facing messages through `/send_tmux`.
+
+Do not suppress worker-facing messages merely because old canary/task text appears in scrollback. If the current bottom state is an idle prompt and TL has routed work to that worker, send the work through `/send_tmux` normally. If the state is `pane_parse_uncertain`, ask TL for recovery direction with the exact pane evidence instead of declaring the worker stuck.
 
 Allowed worker sends in the same tick:
 

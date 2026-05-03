@@ -375,6 +375,121 @@ def cmd_read(args: argparse.Namespace) -> int:
     return 0
 
 
+def cmd_status(args: argparse.Namespace) -> int:
+    cfg = load_config()
+    token = login(cfg)
+    sessions = list_sessions(cfg, token)
+    session, resolution = resolve_target(cfg, sessions, args.target)
+
+    payload = http_json(
+        "GET",
+        cfg.base_url,
+        "/session/snapshot",
+        token=token,
+        query={
+            "session_id": session["sessionId"],
+        },
+    )
+    delivery = payload.get("delivery")
+    if not isinstance(delivery, dict):
+        raise ConfigError("Unexpected /session/snapshot payload: missing delivery object.")
+    outbox = payload.get("outbox")
+    if not isinstance(outbox, list):
+        raise ConfigError("Unexpected /session/snapshot payload: missing outbox list.")
+
+    queued = [message for message in outbox if str(message.get("state") or "") == "queued"]
+    cancelable = [message for message in outbox if message.get("can_cancel") is True]
+    active_message_id = delivery.get("active_message_id")
+    active_message_state = delivery.get("active_message_state")
+    delivery_state = str(delivery.get("state") or "")
+    queued_count = int(delivery.get("queued_count") or 0)
+    ready_to_send = (
+        payload.get("alive") is True
+        and payload.get("ready") is True
+        and delivery_state == "ready"
+        and queued_count == 0
+        and not active_message_id
+        and not cancelable
+    )
+
+    summary = {
+        "ready_to_send": ready_to_send,
+        "reason": "idle_no_active_or_queued_message" if ready_to_send else "not_idle_or_has_active_or_queued_message",
+        "resolution": resolution,
+        "session": {
+            "session_name": session.get("sessionName"),
+            "session_id": session.get("sessionId"),
+            "agent_id": session.get("agentId"),
+            "alive": payload.get("alive"),
+            "ready": payload.get("ready"),
+        },
+        "delivery": {
+            "state": delivery_state,
+            "queued_count": queued_count,
+            "active_message_id": active_message_id,
+            "active_message_state": active_message_state,
+        },
+        "queued_messages": [
+            {
+                "message_id": message.get("message_id"),
+                "sequence": message.get("sequence"),
+                "state": message.get("state"),
+                "can_cancel": message.get("can_cancel"),
+            }
+            for message in queued
+        ],
+        "cancelable_messages": [
+            {
+                "message_id": message.get("message_id"),
+                "sequence": message.get("sequence"),
+                "state": message.get("state"),
+                "can_cancel": message.get("can_cancel"),
+            }
+            for message in cancelable
+        ],
+        "outbox_tail": [
+            {
+                "message_id": message.get("message_id"),
+                "sequence": message.get("sequence"),
+                "state": message.get("state"),
+                "delivery_state": message.get("delivery_state"),
+                "can_cancel": message.get("can_cancel"),
+                "can_retry": message.get("can_retry"),
+                "can_skip": message.get("can_skip"),
+            }
+            for message in outbox[-3:]
+        ],
+    }
+
+    if args.json:
+        print(json.dumps(summary, ensure_ascii=False, indent=2))
+        return 0
+
+    print(f"Resolved target: {resolution}")
+    print(format_session_line(cfg, session))
+    print(f"Ready to send: {'yes' if ready_to_send else 'no'}")
+    print(f"Reason: {summary['reason']}")
+    print(
+        "Delivery: "
+        f"state={delivery_state} queued_count={queued_count} "
+        f"active_message_id={active_message_id or 'null'} "
+        f"active_message_state={active_message_state or 'null'}"
+    )
+    print(f"Queued messages: {len(queued)}")
+    print(f"Cancelable messages: {len(cancelable)}")
+    if queued or cancelable:
+        print("Queued/cancelable outbox:")
+        for message in (queued or cancelable):
+            print(
+                "- "
+                f"sequence={message.get('sequence')} "
+                f"message_id={message.get('message_id')} "
+                f"state={message.get('state')} "
+                f"can_cancel={message.get('can_cancel')}"
+            )
+    return 0
+
+
 def build_parser() -> argparse.ArgumentParser:
     parser = argparse.ArgumentParser(
         description="Control Oysterun Host sessions from TmuxAgentManager local config."
@@ -413,6 +528,18 @@ def build_parser() -> argparse.ArgumentParser:
         help="Include tool_call/tool_result/system rows instead of only human-facing transcript rows.",
     )
     read_parser.set_defaults(func=cmd_read)
+
+    status_parser = subparsers.add_parser("status", help="Read session delivery/outbox status.")
+    status_parser.add_argument(
+        "--target",
+        help="Role, session name, session id, or legacy agent id. Defaults to the team_lead role.",
+    )
+    status_parser.add_argument(
+        "--json",
+        action="store_true",
+        help="Print a machine-readable status summary.",
+    )
+    status_parser.set_defaults(func=cmd_status)
 
     return parser
 

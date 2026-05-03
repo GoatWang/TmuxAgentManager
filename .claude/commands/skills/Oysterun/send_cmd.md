@@ -33,6 +33,7 @@ Do not persist live `session_id`, and treat `agent_id` as legacy compatibility o
 1. Parse `$ARGUMENTS`.
 2. If the first token is a role/session selector, use it as `--target`.
 3. Otherwise, treat the whole argument string as the message and default the target to `team_lead`.
+4. Before sending to `team_lead`, run `/skills/Oysterun/read_status` for the same target. Send only if it reports `Ready to send: yes`.
 
 Run one of:
 
@@ -71,3 +72,4 @@ Report:
 - This is agent-manager meta-work. Do not delegate it.
 - Never silently switch from one Oysterun session to another.
 - If `team_lead` is unresolved or ambiguous, stop and report the live session list as a configuration blocker; do not ask the owner to choose a task-routing target.
+- Do not queue a new TL message when `read_status` shows active, queued, or cancelable work. Defer to the next tick and check again.

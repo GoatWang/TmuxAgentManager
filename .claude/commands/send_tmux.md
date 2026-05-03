@@ -57,22 +57,27 @@ tmux send-keys -t <session> C-u
 
 ```bash
 tmux send-keys -t <session> "<message>"
+sleep 3
 tmux send-keys -t <session> C-m
 ```
 
 **If send_method is `enter`** (regular sessions):
 
 ```bash
-tmux send-keys -t <session> "<message>" Enter
+tmux send-keys -t <session> "<message>"
+sleep 3
+tmux send-keys -t <session> Enter
 ```
+
+The delay between sending text and sending the submit key is mandatory. Do not collapse the text send and submit key into one command for worker sessions; Codex TUI can leave long input sitting in the prompt if the submit key races the paste.
 
 ### Step 5: Confirm receipt
 
-Wait a few seconds, then capture the pane to confirm the message was received and processing started:
+Wait 5 seconds, then capture the pane to confirm the message was received and processing started. The 5-second wait is mandatory; do not judge receipt from an immediate capture because Codex TUI may need a short moment to redraw from prompt input to `Working` / response / tool activity.
 
 ```bash
-sleep 3
-tmux capture-pane -t <session> -p -S -20
+sleep 5
+tmux capture-pane -t <session> -p -J -S -30
 ```
 
 Check for evidence that:
@@ -82,10 +87,22 @@ Check for evidence that:
 This is a receipt check, not a full history read. Keep the first capture small.
 Only if receipt is unclear should you escalate to a medium capture such as `-80` to `-100`.
 
-If the message is visible but not executing:
-1. Send one additional submit key only once (`C-m` for two-line, `Enter` for enter method)
-2. `sleep 10`, then capture the pane again
-3. If still stuck, stop retrying — diagnose the pane state or recover the session before sending anything else
+If the message is visible in the current prompt buffer but not executing, use this bounded submit recovery. The goal is to keep work moving while avoiding blind repeated sends:
+
+1. Send the configured submit key one additional time only once (`C-m` for two-line, `Enter` for enter method).
+2. `sleep 5`, then capture again with `tmux capture-pane -t <session> -p -J -S -30`.
+3. If it is still not executing, send the alternate submit key once:
+   - configured `C-m` -> try `Enter`
+   - configured `Enter` -> try `C-m`
+4. `sleep 5`, then capture again with `tmux capture-pane -t <session> -p -J -S -30`.
+5. If the current prompt still contains the unsent message and there is no worker response, tool activity, `Working`, plan update, or fresh idle prompt after it, send `Escape` once to exit a possible stuck TUI mode.
+6. `sleep 2`, then capture again with `tmux capture-pane -t <session> -p -J -S -50`.
+7. After the Escape capture, classify the pane:
+   - If the message executed, receipt is confirmed.
+   - If the worker is at a fresh idle prompt, the prior prompt buffer is gone; report `receipt confirmed: no`, `agent state: idle`, and send the assignment again only if TL/PM still intends to dispatch it.
+   - If the message is still visibly unsent in the current prompt, report `receipt confirmed: no`, `agent state: pane_parse_uncertain`, include the bottom prompt excerpt, and ask TL/manager recovery direction. Do not keep pressing submit keys blindly.
+
+Do not use `Escape` as an interrupt for active work. Use it only in this receipt-recovery path when the message is still sitting in the prompt and has not started executing.
 
 ## Output
 
