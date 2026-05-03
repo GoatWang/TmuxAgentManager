@@ -27,6 +27,8 @@ They are pattern rules, not task-specific rules. Do not key them to a phase ID, 
 1. **No raw tmux send to TL.**
    - PM must never send TL messages with raw `tmux send-keys -t <tl_session> ...` commands, including sessions such as `Oysterun`, or any other hand-written tmux command.
    - Every TL send must go through the Oysterun session-control route and `.claude/commands/skills/Oysterun/send_cmd.md`.
+   - The only valid shell transport for a TL send is the `send_cmd.md` procedure: `python3 tool_scripts/oysterun_control.py send ...` after `read_status` says ready.
+   - If PM is about to run `tmux send-keys` for TL, PM must stop that action and run `send_cmd.md` instead.
    - Before sending to TL, run `.claude/commands/skills/Oysterun/read_status.md`.
    - If PM used raw tmux for TL, classify the tick as command-protocol failure and correct it next tick; do not claim "TL updated" unless the session-control send path confirms delivery.
 
@@ -34,10 +36,18 @@ They are pattern rules, not task-specific rules. Do not key them to a phase ID, 
    - If any worker pane contains a newly visible or not-yet-reported completed answer, output path, report path, evidence root, validation summary, final sentinel, or clean prompt after a prior blocked/working state, this is not no-change.
    - PM must report the deliverable or state transition to TL.
    - A capture with a completion phrase, `Output: /path/...`, `Report: /path/...`, `Evidence root: /path/...`, `READY_TASK...`, and a clean prompt must be reported as completion, not "no new worker activity".
+   - A deliverable is "reported" only after a TL packet was successfully sent through Oysterun session-control and that packet contained the worker slot plus the deliverable path/report/evidence/sentinel. A raw tmux no-change update does not count. A PM sentence saying "sent TL a no-change update" does not count.
+   - If a previous tick misclassified a visible completion as no-change, the next tick must send a correction deliverable packet before any ordinary no-change/status update.
 
 3. **No "all idle" summary without reconciliation.**
    - Before saying all workers are idle, PM must state whether each idle worker is parked by TL, waiting for a TL decision, waiting for a clean-prompt dispatch, or has a completed deliverable that must be reported.
    - "Idle at clean prompt" can be a trigger to dispatch TL-routed work; it is not automatically a no-op.
+
+4. **Violation recovery beats ordinary loop output.**
+   - If this tick observes a command-protocol failure, unreported deliverable, stale no-change classification, or owner-provided pane evidence proving those failures, PM must not answer with the normal idle/no-change script.
+   - First send or preserve a TL correction packet through `send_cmd.md`.
+   - The correction packet must state the violated rule, worker slot/session, completion signal, deliverable paths, recommendation/sentinel, and that the earlier raw/no-change update is invalid.
+   - Only after the correction packet is delivered or explicitly deferred by `read_status` may PM give the owner a status summary.
 
 Active worker supervision with structured challenges — the more demanding cousin of `/sleep_to_monitor`. Where sleep-to-monitor asks "is the worker finished?", this command asks "is the worker doing the RIGHT work, the RIGHT way, with EVIDENCE, per the plan — and if something fails, have they collected enough diagnostics for TL to adjudicate instead of giving up?"
 
@@ -506,6 +516,14 @@ Completion signal patterns that require a TL deliverable packet:
 - `Worked for ...` followed by a clean prompt
 
 These are generic patterns. Apply them to any worker task, route, phase, project, or report name. Do not classify those examples as `all idle`, `state unchanged`, or `no new worker activity`. A worker can be idle now and still have a newly completed deliverable that TL must see.
+
+Reported/not-reported rule:
+
+- A deliverable is reported only when a TL packet was sent through `.claude/commands/skills/Oysterun/send_cmd.md` / Oysterun session-control and the packet included that worker's deliverable path/report/evidence/sentinel.
+- `tmux send-keys` to a TL pane is never a valid TL packet.
+- A raw tmux no-change update does not clear a visible completion signal.
+- If a visible completion signal was followed by a raw/no-change TL update in the same or previous tick, classify the next action as `correction_deliverable_packet_required`, not `no-op`.
+- If unsure whether a deliverable was reported, treat it as not reported and include it in the next TL packet.
 
 No-op is allowed only when all of the following are true:
 
